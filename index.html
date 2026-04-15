@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="da">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="stylesheet" href="/src/styles.css" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Call Recorder</title>
+    <script type="module" src="/src/main.ts" defer></script>
+  </head>
+
+  <body>
+    <div id="app">
+      <!-- Auth overlay -->
+      <div id="auth-overlay" class="overlay">
+        <div class="overlay-content">
+          <h2>Call Recorder</h2>
+          <p>Log ind for at starte</p>
+          <button id="login-btn" class="btn btn-primary">Log ind med Google</button>
+          <p id="auth-error" class="auth-error hidden"></p>
+        </div>
+      </div>
+
+      <!-- Model download overlay -->
+      <div id="model-overlay" class="overlay hidden">
+        <div class="overlay-content">
+          <h2>Whisper sprogmodel</h2>
+          <p>For at transskribere opkald skal sprogmodellen downloades (~1.6 GB).</p>
+          <div id="download-progress" class="progress-container hidden">
+            <div class="progress-bar">
+              <div id="progress-fill" class="progress-fill"></div>
+            </div>
+            <span id="progress-text">0%</span>
+          </div>
+          <button id="download-btn" class="btn btn-primary">Download model</button>
+          <button id="skip-download-btn" class="btn btn-secondary">Spring over</button>
+        </div>
+      </div>
+
+      <!-- Log panel -->
+      <div id="log-panel" class="log-panel hidden">
+        <div class="log-header">
+          <h3>Log</h3>
+          <button id="log-close-btn" class="btn btn-secondary">Luk</button>
+        </div>
+        <div id="log-content" class="log-content"></div>
+      </div>
+
+      <!-- Main layout -->
+      <div class="layout">
+        <!-- Header -->
+        <header class="header">
+          <h1>Call Recorder</h1>
+          <div class="header-actions">
+            <div id="recording-indicator" class="recording-indicator hidden">
+              <span class="recording-dot"></span>
+              <span id="recording-timer">00:00</span>
+            </div>
+            <button id="log-btn" class="btn btn-secondary btn-log" title="Vis log">Log</button>
+            <button id="record-btn" class="btn btn-record">Start optagelse</button>
+          </div>
+        </header>
+
+        <!-- Content -->
+        <div class="content">
+          <!-- Left: Recording list -->
+          <aside class="sidebar">
+            <h2>Optagelser</h2>
+            <div id="recordings-list" class="recordings-list">
+              <p class="empty-state">Ingen optagelser endnu</p>
+            </div>
+          </aside>
+
+          <!-- Right: Detail view -->
+          <main class="detail">
+            <div id="detail-empty" class="detail-empty">
+              <p>Vælg en optagelse for at se detaljer</p>
+            </div>
+            <div id="detail-view" class="detail-view hidden">
+              <div class="detail-header">
+                <h2 id="detail-title" class="detail-title" title="Klik for at omdøbe"></h2>
+                <input id="detail-title-input" class="detail-title-input hidden" type="text" />
+                <span id="detail-date" class="detail-date"></span>
+              </div>
+              <div class="detail-player">
+                <audio id="audio-player" controls></audio>
+                <span id="detail-duration" class="detail-duration"></span>
+              </div>
+              <div class="detail-transcription">
+                <div class="transcription-header">
+                  <h3>Transskription</h3>
+                  <div class="transcription-actions">
+                    <button id="copy-btn" class="btn btn-secondary" title="Kopier til udklipsholder">Kopier</button>
+                    <button id="retranscribe-btn" class="btn btn-secondary">Transskriber igen</button>
+                  </div>
+                </div>
+                <div id="transcription-status" class="transcription-status hidden"></div>
+                <div id="transcription-text" class="transcription-text">
+                  <p class="empty-state">Ingen transskription</p>
+                </div>
+              </div>
+              <div class="detail-actions">
+                <button id="delete-btn" class="btn btn-danger">Slet optagelse</button>
+              </div>
+            </div>
+          </main>
+        </div>
+      </div>
+    </div>
+  </body>
+</html>
