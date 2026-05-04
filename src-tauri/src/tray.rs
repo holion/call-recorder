@@ -23,6 +23,6 @@ pub fn set_icon(app: &AppHandle, state: TrayState) {
 
     if let Some(tray) = app.tray_by_id("main") {
         let _ = tray.set_icon(Some(image));
-        let _ = tray.set_icon_as_template(true);
+        let _ = tray.set_icon_as_template(false);
     }
 }

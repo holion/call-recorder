@@ -541,6 +541,8 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
         })
         .build(app)?;
 
+    crate::tray::set_icon(app, crate::tray::TrayState::Normal);
+
     Ok(())
 }
 
