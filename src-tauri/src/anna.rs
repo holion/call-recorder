@@ -251,7 +251,11 @@ pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>,
     } else {
         None
     };
-    app_log!("[anna] Sender til OpenAI: \"{}\" (screenshot: {})", command, if used_screenshot.is_some() { "ja" } else { "nej" });
+    if used_screenshot.is_some() {
+        app_log!("[anna] Sender til OpenAI (inkl. screenshot): \"{}\"", command);
+    } else {
+        app_log!("[anna] Sender til OpenAI: \"{}\"", command);
+    }
 
     crate::tray::set_icon(app, crate::tray::TrayState::Thinking);
 
