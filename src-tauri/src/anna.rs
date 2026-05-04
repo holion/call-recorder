@@ -46,6 +46,8 @@ struct ChoiceMsg {
 // We capture using CGDisplayCreateImage instead of spawning `screencapture`,
 // because a child process does NOT inherit our app's Screen Recording
 // permission and produces a black image.
+// The screenshot is encoded as JPEG to keep payload size down; Chat Completions
+// can drop image inputs that are too large.
 
 type CGDirectDisplayID = u32;
 type CGImageRef = *mut c_void;
@@ -102,7 +104,7 @@ pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
             return Err("CFDataCreateMutable fejlede".into());
         }
 
-        let type_str = CString::new("public.png").unwrap();
+        let type_str = CString::new("public.jpeg").unwrap();
         let png_cfstr = CFStringCreateWithCString(
             std::ptr::null(),
             type_str.as_ptr() as *const i8,
@@ -154,9 +156,12 @@ fn call_openai(api_key: &str, prompt: &str, screenshot: Option<Vec<u8>>) -> Resu
         Some(bytes) => {
             let encoded = B64.encode(&bytes);
             serde_json::json!([
+                { "type": "text", "text":
+                    "Der er vedhæftet et skærmbillede. Brug det aktivt til dit svar. \
+                    Skriv ikke, at du ikke kan se billedet. Hvis noget er uklart, skriv præcist hvad der er uklart." },
                 { "type": "text", "text": prompt },
                 { "type": "image_url", "image_url": {
-                    "url": format!("data:image/png;base64,{}", encoded),
+                    "url": format!("data:image/jpeg;base64,{}", encoded),
                     "detail": "high"
                 }}
             ])
@@ -251,8 +256,17 @@ pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>,
     } else {
         None
     };
-    if used_screenshot.is_some() {
-        app_log!("[anna] Sender til OpenAI (inkl. screenshot): \"{}\"", command);
+    if let Some(ref screenshot) = used_screenshot {
+        app_log!(
+            "[anna] Sender til OpenAI (inkl. screenshot, {} bytes): \"{}\"",
+            screenshot.len(),
+            command
+        );
+        if screenshot.len() > 8_000_000 {
+            app_log!(
+                "[anna] ADVARSEL: screenshot er over 8 MB; OpenAI kan ignorere billed-input i Chat Completions"
+            );
+        }
     } else {
         app_log!("[anna] Sender til OpenAI: \"{}\"", command);
     }
