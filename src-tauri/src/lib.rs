@@ -1,6 +1,11 @@
+#[cfg(target_os = "macos")]
+mod anna;
 mod audio;
+#[cfg(target_os = "macos")]
+mod dictation;
 mod google_auth;
 mod logging;
+mod settings;
 mod state;
 mod transcription;
 
@@ -25,6 +30,7 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
 
     let app_clone = app.clone();
     let models_dir = state.models_dir();
+    let transcription_settings = settings::Settings::load(&state.data_dir);
 
     // All audio init must run on a real OS thread (not tokio async) because
     // cpal and ScreenCaptureKit need an active run loop / thread context.
@@ -75,24 +81,51 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
         let id = uuid::Uuid::new_v4().to_string();
         app_log!("[call-recorder] Optagelse startet: {}", id);
 
-        // Start live transcription if whisper model is available
-        let live_transcriber = if transcription::model::is_model_downloaded(&models_dir) {
-            let mic_arc = mic.samples_arc();
-            let sys_arc = system.samples_arc();
-            let mic_rate = mic.sample_rate();
-            let sys_rate = system.sample_rate();
-            let model = transcription::model::model_path(&models_dir);
-            Some(transcription::live::LiveTranscriber::start(
-                id.clone(),
-                mic_arc,
-                mic_rate,
-                sys_arc,
-                sys_rate,
-                model,
-                app_clone.clone(),
-            ))
-        } else {
-            None
+        let mic_arc = mic.samples_arc();
+        let sys_arc = system.samples_arc();
+        let mic_rate = mic.sample_rate();
+        let sys_rate = system.sample_rate();
+
+        // Start live transcription when the selected provider is available.
+        let live_transcriber = match transcription_settings.transcription_provider {
+            settings::TranscriptionProvider::Local => {
+                if transcription::model::is_model_downloaded(&models_dir) {
+                    let model = transcription::model::model_path(&models_dir);
+                    Some(transcription::live::LiveTranscriber::start_local(
+                        id.clone(),
+                        mic_arc,
+                        mic_rate,
+                        sys_arc,
+                        sys_rate,
+                        model,
+                        app_clone.clone(),
+                    ))
+                } else {
+                    None
+                }
+            }
+            settings::TranscriptionProvider::Openai => {
+                match transcription_settings.openai_api_key.as_deref() {
+                    Some(key) if !key.trim().is_empty() => Some(
+                        transcription::live::LiveTranscriber::start_openai(
+                            id.clone(),
+                            mic_arc,
+                            mic_rate,
+                            sys_arc,
+                            sys_rate,
+                            key.trim().to_string(),
+                            app_clone.clone(),
+                        ),
+                    ),
+                    _ => {
+                        let _ = app_clone.emit(
+                            "recording-warning",
+                            "OpenAI-transskription er valgt, men der mangler en API-nøgle. Optagelsen gemmes uden live transskription.".to_string(),
+                        );
+                        None
+                    }
+                }
+            }
         };
 
         Ok(state::ActiveRecording {
@@ -158,12 +191,19 @@ async fn stop_recording(
         let sys_samples = active.system.take_samples();
         let sys_rate = active.system.sample_rate();
 
-        app_log!("[call-recorder] Optagelse stoppet. Mic: {}, System: {}", mic_samples.len(), sys_samples.len());
+        app_log!(
+            "[call-recorder] Optagelse stoppet. Mic: {}, System: {}",
+            mic_samples.len(),
+            sys_samples.len()
+        );
 
         audio::mixer::save_separate_and_mixed(
-            &mic_samples, mic_rate,
-            &sys_samples, sys_rate,
-            &rec_dir, &rid,
+            &mic_samples,
+            mic_rate,
+            &sys_samples,
+            sys_rate,
+            &rec_dir,
+            &rid,
         )
         .map_err(|e| e.to_string())
     })
@@ -173,12 +213,21 @@ async fn stop_recording(
     // Auto-transcribe in background
     let has_system = saved.has_system_audio;
     let models_dir = state.models_dir();
+    let data_dir = state.data_dir.clone();
     let rec_dir = recordings_dir.clone();
     let transcribe_id = recording_id.clone();
     let app_clone = app.clone();
 
     tokio::spawn(async move {
-        auto_transcribe(transcribe_id, has_system, rec_dir, models_dir, app_clone).await;
+        auto_transcribe(
+            transcribe_id,
+            has_system,
+            rec_dir,
+            models_dir,
+            data_dir,
+            app_clone,
+        )
+        .await;
     });
 
     Ok(StopRecordingResult {
@@ -193,56 +242,114 @@ async fn auto_transcribe(
     has_system: bool,
     recordings_dir: std::path::PathBuf,
     models_dir: std::path::PathBuf,
+    data_dir: std::path::PathBuf,
     app: AppHandle,
 ) {
-    if !transcription::model::is_model_downloaded(&models_dir) {
-        return;
-    }
-
     let _ = app.emit("transcription-started", &id);
 
     let mic_path = recordings_dir.join(format!("{}_mic.wav", id));
     let sys_path = recordings_dir.join(format!("{}_system.wav", id));
-    let model = transcription::model::model_path(&models_dir);
+    let settings = settings::Settings::load(&data_dir);
 
-    let result = tokio::task::spawn_blocking(move || -> Result<String, anyhow::Error> {
-        use transcription::whisper::{Transcriber, merge_segments, format_transcript};
-
-        let transcriber = Transcriber::new(&model)?;
-
-        let mic_segments = if mic_path.exists() {
-            match transcriber.transcribe_channel(&mic_path, "Sælger") {
-                Ok(segs) => segs,
-                Err(e) => {
-                    app_log!("[call-recorder] Sælger transskription fejl: {}", e);
-                    Vec::new()
-                }
+    let result = match settings.transcription_provider {
+        settings::TranscriptionProvider::Local => {
+            if !transcription::model::is_model_downloaded(&models_dir) {
+                app_log!("[call-recorder] Lokal Whisper-model er ikke downloadet");
+                let _ = app.emit("transcription-failed", &id);
+                return;
             }
-        } else {
-            app_log!("[call-recorder] Ingen mic-fil fundet: {:?}", mic_path);
-            Vec::new()
-        };
 
-        let sys_segments = if has_system && sys_path.exists() {
-            match transcriber.transcribe_channel(&sys_path, "Lead") {
-                Ok(segs) => segs,
-                Err(e) => {
-                    app_log!("[call-recorder] Lead transskription fejl: {}", e);
+            let model = transcription::model::model_path(&models_dir);
+            tokio::task::spawn_blocking(move || -> Result<String, anyhow::Error> {
+                use transcription::whisper::{format_transcript, merge_segments, Transcriber};
+
+                let transcriber = Transcriber::new(&model)?;
+
+                let mic_segments = if mic_path.exists() {
+                    match transcriber.transcribe_channel(&mic_path, "Sælger") {
+                        Ok(segs) => segs,
+                        Err(e) => {
+                            app_log!("[call-recorder] Sælger transskription fejl: {}", e);
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    app_log!("[call-recorder] Ingen mic-fil fundet: {:?}", mic_path);
                     Vec::new()
-                }
-            }
-        } else {
-            Vec::new()
-        };
+                };
 
-        let merged = merge_segments(mic_segments, sys_segments);
-        Ok(format_transcript(&merged))
-    })
-    .await;
+                let sys_segments = if has_system && sys_path.exists() {
+                    match transcriber.transcribe_channel(&sys_path, "Lead") {
+                        Ok(segs) => segs,
+                        Err(e) => {
+                            app_log!("[call-recorder] Lead transskription fejl: {}", e);
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                let merged = merge_segments(mic_segments, sys_segments);
+                Ok(format_transcript(&merged))
+            })
+            .await
+        }
+        settings::TranscriptionProvider::Openai => {
+            let Some(api_key) = settings
+                .openai_api_key
+                .as_deref()
+                .map(str::trim)
+                .filter(|key| !key.is_empty())
+                .map(str::to_string)
+            else {
+                app_log!("[call-recorder] OpenAI-transskription mangler API-nøgle");
+                let _ = app.emit("transcription-failed", &id);
+                return;
+            };
+
+            tokio::task::spawn_blocking(move || -> Result<String, anyhow::Error> {
+                use transcription::openai;
+                use transcription::whisper::{format_transcript, merge_segments};
+
+                let mic_segments = if mic_path.exists() {
+                    match openai::transcribe_channel(&api_key, &mic_path, "Sælger") {
+                        Ok(segs) => segs,
+                        Err(e) => {
+                            app_log!("[call-recorder] OpenAI Sælger transskription fejl: {}", e);
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    app_log!("[call-recorder] Ingen mic-fil fundet: {:?}", mic_path);
+                    Vec::new()
+                };
+
+                let sys_segments = if has_system && sys_path.exists() {
+                    match openai::transcribe_channel(&api_key, &sys_path, "Lead") {
+                        Ok(segs) => segs,
+                        Err(e) => {
+                            app_log!("[call-recorder] OpenAI Lead transskription fejl: {}", e);
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    Vec::new()
+                };
+
+                let merged = merge_segments(mic_segments, sys_segments);
+                Ok(format_transcript(&merged))
+            })
+            .await
+        }
+    };
 
     match result {
         Ok(Ok(text)) if !text.is_empty() => {
-            let _ = app.emit("transcription-complete", serde_json::json!({"id": id, "text": text}));
+            let _ = app.emit(
+                "transcription-complete",
+                serde_json::json!({"id": id, "text": text}),
+            );
         }
         _ => {
             let _ = app.emit("transcription-failed", &id);
@@ -277,13 +384,25 @@ async fn transcribe_recording(
 ) -> Result<(), String> {
     let recordings_dir = state.recordings_dir();
     let models_dir = state.models_dir();
+    let data_dir = state.data_dir.clone();
+    let settings = settings::Settings::load(&data_dir);
 
-    if !transcription::model::is_model_downloaded(&models_dir) {
+    if settings.transcription_provider == settings::TranscriptionProvider::Local
+        && !transcription::model::is_model_downloaded(&models_dir)
+    {
         return Err("Whisper-model er ikke downloadet endnu".into());
     }
 
     tokio::spawn(async move {
-        auto_transcribe(id, has_system_audio, recordings_dir, models_dir, app).await;
+        auto_transcribe(
+            id,
+            has_system_audio,
+            recordings_dir,
+            models_dir,
+            data_dir,
+            app,
+        )
+        .await;
     });
 
     Ok(())
@@ -291,14 +410,19 @@ async fn transcribe_recording(
 
 #[tauri::command]
 async fn google_sign_in() -> Result<google_auth::GoogleTokens, String> {
-    google_auth::authenticate()
-        .await
-        .map_err(|e| e.to_string())
+    google_auth::authenticate().await.map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 async fn check_model_status(state: State<'_, AppState>) -> Result<bool, String> {
-    Ok(transcription::model::is_model_downloaded(&state.models_dir()))
+    let settings = settings::Settings::load(&state.data_dir);
+    if settings.transcription_provider == settings::TranscriptionProvider::Openai {
+        return Ok(true);
+    }
+
+    Ok(transcription::model::is_model_downloaded(
+        &state.models_dir(),
+    ))
 }
 
 #[tauri::command]
@@ -318,6 +442,69 @@ async fn is_recording(state: State<'_, AppState>) -> Result<bool, String> {
 #[tauri::command]
 async fn get_logs() -> Result<Vec<String>, String> {
     Ok(logging::get_logs())
+}
+
+#[derive(Serialize)]
+struct AppSettingsDto {
+    openai_api_key: Option<String>,
+    transcription_provider: settings::TranscriptionProvider,
+}
+
+#[tauri::command]
+async fn get_settings(state: State<'_, AppState>) -> Result<AppSettingsDto, String> {
+    let settings = settings::Settings::load(&state.data_dir);
+    Ok(AppSettingsDto {
+        openai_api_key: settings.openai_api_key,
+        transcription_provider: settings.transcription_provider,
+    })
+}
+
+#[tauri::command]
+async fn save_settings(
+    openai_api_key: String,
+    transcription_provider: settings::TranscriptionProvider,
+    state: State<'_, AppState>,
+) -> Result<(), String> {
+    let mut settings = settings::Settings::load(&state.data_dir);
+    settings.openai_api_key = if openai_api_key.trim().is_empty() {
+        None
+    } else {
+        Some(openai_api_key.trim().to_string())
+    };
+    settings.transcription_provider = transcription_provider;
+    settings.save(&state.data_dir)
+}
+
+#[tauri::command]
+async fn get_openai_key(state: State<'_, AppState>) -> Result<Option<String>, String> {
+    Ok(settings::Settings::load(&state.data_dir).openai_api_key)
+}
+
+#[derive(Serialize)]
+struct AnnaStateDto {
+    prompt: String,
+    response: Option<String>,
+    is_error: bool,
+}
+
+#[tauri::command]
+fn get_anna_state(state: State<'_, AppState>) -> Option<AnnaStateDto> {
+    state.anna.lock().ok()?.as_ref().map(|s| AnnaStateDto {
+        prompt: s.prompt.clone(),
+        response: s.response.clone(),
+        is_error: s.is_error,
+    })
+}
+
+#[tauri::command]
+async fn save_openai_key(key: String, state: State<'_, AppState>) -> Result<(), String> {
+    let mut s = settings::Settings::load(&state.data_dir);
+    s.openai_api_key = if key.trim().is_empty() {
+        None
+    } else {
+        Some(key.trim().to_string())
+    };
+    s.save(&state.data_dir)
 }
 
 // ─── App Setup ───
@@ -379,6 +566,16 @@ pub fn run() {
 
             setup_tray(app.handle())?;
 
+            #[cfg(target_os = "macos")]
+            {
+                let data_dir2 = app
+                    .path()
+                    .app_data_dir()
+                    .expect("Kunne ikke finde app data mappe");
+
+                dictation::start(app.handle().clone(), data_dir2);
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -392,6 +589,11 @@ pub fn run() {
             download_model,
             is_recording,
             get_logs,
+            get_settings,
+            save_settings,
+            get_openai_key,
+            save_openai_key,
+            get_anna_state,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

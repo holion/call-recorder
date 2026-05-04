@@ -10,6 +10,7 @@
     "frontendDist": "../dist"
   },
   "app": {
+    "macOSPrivateApi": true,
     "withGlobalTauri": true,
     "windows": [
       {
@@ -22,6 +23,22 @@
         "resizable": true,
         "minWidth": 700,
         "minHeight": 500
+      },
+      {
+        "label": "anna-panel",
+        "url": "anna.html",
+        "title": "Anna",
+        "width": 380,
+        "height": 520,
+        "visible": false,
+        "decorations": false,
+        "transparent": true,
+        "backgroundColor": "#00000000",
+        "resizable": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "shadow": false,
+        "focus": true
       }
     ],
     "trayIcon": {

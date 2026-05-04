@@ -1,6 +1,7 @@
 use crate::app_log;
 use crate::audio::mixer;
-use crate::transcription::whisper::{merge_segments, format_transcript, Transcriber};
+use crate::transcription::openai;
+use crate::transcription::whisper::{format_transcript, merge_segments, Transcriber};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
@@ -21,8 +22,31 @@ pub struct LiveTranscriber {
 // Safety: JoinHandle and Arc<AtomicBool> are Send
 unsafe impl Send for LiveTranscriber {}
 
+enum LiveBackend {
+    Local(PathBuf),
+    Openai(String),
+}
+
+enum ActiveTranscriber {
+    Local(Transcriber),
+    Openai(String),
+}
+
+impl ActiveTranscriber {
+    fn transcribe_audio(
+        &self,
+        samples: &[f32],
+        speaker: &str,
+    ) -> anyhow::Result<Vec<crate::transcription::whisper::TimedSegment>> {
+        match self {
+            Self::Local(transcriber) => transcriber.transcribe_audio(samples, speaker),
+            Self::Openai(api_key) => openai::transcribe_audio(api_key, samples, speaker),
+        }
+    }
+}
+
 impl LiveTranscriber {
-    pub fn start(
+    pub fn start_local(
         recording_id: String,
         mic_samples: Arc<Mutex<Vec<f32>>>,
         mic_rate: u32,
@@ -31,20 +55,66 @@ impl LiveTranscriber {
         model_path: PathBuf,
         app: AppHandle,
     ) -> Self {
+        Self::start(
+            recording_id,
+            mic_samples,
+            mic_rate,
+            sys_samples,
+            sys_rate,
+            LiveBackend::Local(model_path),
+            app,
+        )
+    }
+
+    pub fn start_openai(
+        recording_id: String,
+        mic_samples: Arc<Mutex<Vec<f32>>>,
+        mic_rate: u32,
+        sys_samples: Arc<Mutex<Vec<f32>>>,
+        sys_rate: u32,
+        api_key: String,
+        app: AppHandle,
+    ) -> Self {
+        Self::start(
+            recording_id,
+            mic_samples,
+            mic_rate,
+            sys_samples,
+            sys_rate,
+            LiveBackend::Openai(api_key),
+            app,
+        )
+    }
+
+    fn start(
+        recording_id: String,
+        mic_samples: Arc<Mutex<Vec<f32>>>,
+        mic_rate: u32,
+        sys_samples: Arc<Mutex<Vec<f32>>>,
+        sys_rate: u32,
+        backend: LiveBackend,
+        app: AppHandle,
+    ) -> Self {
         let stop = Arc::new(AtomicBool::new(false));
         let stop_clone = stop.clone();
 
         let handle = std::thread::spawn(move || {
             app_log!("[live] Starter live transskription...");
 
-            let transcriber = match Transcriber::new(&model_path) {
-                Ok(t) => {
-                    app_log!("[live] Whisper-model indlæst");
-                    t
-                }
-                Err(e) => {
-                    app_log!("[live] Kunne ikke indlæse Whisper-model: {}", e);
-                    return;
+            let transcriber = match backend {
+                LiveBackend::Local(model_path) => match Transcriber::new(&model_path) {
+                    Ok(t) => {
+                        app_log!("[live] Lokal Whisper-model indlæst");
+                        ActiveTranscriber::Local(t)
+                    }
+                    Err(e) => {
+                        app_log!("[live] Kunne ikke indlæse Whisper-model: {}", e);
+                        return;
+                    }
+                },
+                LiveBackend::Openai(api_key) => {
+                    app_log!("[live] Bruger OpenAI cloud-transskription");
+                    ActiveTranscriber::Openai(api_key)
                 }
             };
 
@@ -68,8 +138,10 @@ impl LiveTranscriber {
                 }
 
                 // Calculate overlap in source sample rate
-                let mic_overlap_src = (OVERLAP_SAMPLES_16K as f64 * mic_rate as f64 / 16000.0) as usize;
-                let sys_overlap_src = (OVERLAP_SAMPLES_16K as f64 * sys_rate as f64 / 16000.0) as usize;
+                let mic_overlap_src =
+                    (OVERLAP_SAMPLES_16K as f64 * mic_rate as f64 / 16000.0) as usize;
+                let sys_overlap_src =
+                    (OVERLAP_SAMPLES_16K as f64 * sys_rate as f64 / 16000.0) as usize;
 
                 // Read mic samples from overlap start
                 let (mic_chunk, mic_new_cursor, mic_offset_samples) = {
@@ -108,8 +180,11 @@ impl LiveTranscriber {
                     continue;
                 }
 
-                app_log!("[live] Transskriberer chunk: mic={} sys={} samples (16kHz)",
-                    mic_resampled.len(), sys_resampled.len());
+                app_log!(
+                    "[live] Transskriberer chunk: mic={} sys={} samples (16kHz)",
+                    mic_resampled.len(),
+                    sys_resampled.len()
+                );
 
                 // Time offset: where this chunk starts in the overall recording
                 let mic_offset_ms = (mic_offset_samples as f64 / mic_rate as f64 * 1000.0) as i64;
@@ -165,10 +240,13 @@ impl LiveTranscriber {
                 let all = merge_segments(mic_segments, sys_segments);
                 if !all.is_empty() {
                     let text = format_transcript(&all);
-                    let _ = app.emit("transcription-chunk", serde_json::json!({
-                        "id": recording_id,
-                        "text": text,
-                    }));
+                    let _ = app.emit(
+                        "transcription-chunk",
+                        serde_json::json!({
+                            "id": recording_id,
+                            "text": text,
+                        }),
+                    );
                     app_log!("[live] Emitterede {} segmenter", all.len());
                 }
 

@@ -36,6 +36,47 @@
         </div>
       </div>
 
+      <!-- Settings overlay -->
+      <div id="settings-overlay" class="overlay hidden">
+        <div class="overlay-content">
+          <h2>Indstillinger</h2>
+          <div class="settings-group">
+            <label>Transskription</label>
+            <div class="settings-choice-list">
+              <label class="settings-choice">
+                <input type="radio" name="transcription-provider" value="local" />
+                <span>
+                  <strong>Lokal Whisper</strong>
+                  <small>Lyden bliver på computeren. Kræver downloadet model.</small>
+                </span>
+              </label>
+              <label class="settings-choice">
+                <input type="radio" name="transcription-provider" value="openai" />
+                <span>
+                  <strong>OpenAI Whisper i skyen</strong>
+                  <small>Hurtigere på svage maskiner, men sender lyd til OpenAI.</small>
+                </span>
+              </label>
+            </div>
+          </div>
+          <div class="settings-group">
+            <label for="openai-key-input">OpenAI API-nøgle</label>
+            <input
+              id="openai-key-input"
+              type="password"
+              placeholder="sk-..."
+              autocomplete="off"
+              spellcheck="false"
+            />
+            <p class="settings-hint">Bruges af Anna og OpenAI-transskription. Find din nøgle på platform.openai.com.</p>
+          </div>
+          <div class="overlay-actions">
+            <button id="settings-save-btn" class="btn btn-primary">Gem</button>
+            <button id="settings-cancel-btn" class="btn btn-secondary">Annuller</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Log panel -->
       <div id="log-panel" class="log-panel hidden">
         <div class="log-header">
@@ -55,6 +96,7 @@
               <span class="recording-dot"></span>
               <span id="recording-timer">00:00</span>
             </div>
+            <button id="settings-btn" class="btn btn-secondary btn-icon" title="Indstillinger">⚙</button>
             <button id="log-btn" class="btn btn-secondary btn-log" title="Vis log">Log</button>
             <button id="record-btn" class="btn btn-record">Start optagelse</button>
           </div>

@@ -30,11 +30,7 @@ impl Transcriber {
     }
 
     /// Transcribe a WAV file and return timed segments with speaker label
-    pub fn transcribe_channel(
-        &self,
-        wav_path: &Path,
-        speaker: &str,
-    ) -> Result<Vec<TimedSegment>> {
+    pub fn transcribe_channel(&self, wav_path: &Path, speaker: &str) -> Result<Vec<TimedSegment>> {
         app_log!("Transskriberer {}...", speaker);
 
         let audio = load_wav_mono_f32(wav_path)?;
@@ -47,7 +43,10 @@ impl Transcriber {
             return Ok(Vec::new());
         }
 
-        let mut state = self.ctx.create_state().context("Kunne ikke oprette Whisper-state")?;
+        let mut state = self
+            .ctx
+            .create_state()
+            .context("Kunne ikke oprette Whisper-state")?;
 
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_language(Some("da"));
@@ -84,16 +83,15 @@ impl Transcriber {
     }
 
     /// Transcribe raw f32 audio samples (already at 16kHz mono) without file I/O
-    pub fn transcribe_audio(
-        &self,
-        audio: &[f32],
-        speaker: &str,
-    ) -> Result<Vec<TimedSegment>> {
+    pub fn transcribe_audio(&self, audio: &[f32], speaker: &str) -> Result<Vec<TimedSegment>> {
         if audio.is_empty() || !contains_speech(audio, speaker) {
             return Ok(Vec::new());
         }
 
-        let mut state = self.ctx.create_state().context("Kunne ikke oprette Whisper-state")?;
+        let mut state = self
+            .ctx
+            .create_state()
+            .context("Kunne ikke oprette Whisper-state")?;
 
         let mut params = FullParams::new(SamplingStrategy::Greedy { best_of: 1 });
         params.set_language(Some("da"));
@@ -130,7 +128,10 @@ impl Transcriber {
 }
 
 /// Merge two sets of timed segments, sorted by start time
-pub fn merge_segments(mut mic_segments: Vec<TimedSegment>, mut sys_segments: Vec<TimedSegment>) -> Vec<TimedSegment> {
+pub fn merge_segments(
+    mut mic_segments: Vec<TimedSegment>,
+    mut sys_segments: Vec<TimedSegment>,
+) -> Vec<TimedSegment> {
     let mut all = Vec::new();
     all.append(&mut mic_segments);
     all.append(&mut sys_segments);
@@ -162,7 +163,7 @@ pub fn format_transcript(segments: &[TimedSegment]) -> String {
 /// Check if audio contains actual speech by measuring RMS energy in 2-second windows.
 /// If ANY window has sufficient energy, we consider the file to contain speech.
 /// This avoids rejecting files where speech is surrounded by long periods of silence.
-fn contains_speech(samples: &[f32], speaker: &str) -> bool {
+pub(crate) fn contains_speech(samples: &[f32], speaker: &str) -> bool {
     if samples.is_empty() {
         return false;
     }
@@ -179,8 +180,12 @@ fn contains_speech(samples: &[f32], speaker: &str) -> bool {
         let rms = (sum_sq / chunk.len() as f64).sqrt();
         let peak = chunk.iter().map(|s| s.abs()).fold(0.0f32, f32::max);
 
-        if rms > max_rms { max_rms = rms; }
-        if peak > max_peak { max_peak = peak; }
+        if rms > max_rms {
+            max_rms = rms;
+        }
+        if peak > max_peak {
+            max_peak = peak;
+        }
 
         if rms > 0.005 && peak > 0.02 {
             speech_windows += 1;
@@ -189,8 +194,15 @@ fn contains_speech(samples: &[f32], speaker: &str) -> bool {
 
     let has_speech = speech_windows > 0;
 
-    app_log!("{} audio: max_rms={:.6}, max_peak={:.4}, speech_windows={}/{}, speech={}",
-        speaker, max_rms, max_peak, speech_windows, total_windows, has_speech);
+    app_log!(
+        "{} audio: max_rms={:.6}, max_peak={:.4}, speech_windows={}/{}, speech={}",
+        speaker,
+        max_rms,
+        max_peak,
+        speech_windows,
+        total_windows,
+        has_speech
+    );
 
     if !has_speech {
         app_log!("{}: ingen tale detekteret, springer over", speaker);
@@ -199,7 +211,7 @@ fn contains_speech(samples: &[f32], speaker: &str) -> bool {
     has_speech
 }
 
-fn load_wav_mono_f32(path: &Path) -> Result<Vec<f32>> {
+pub(crate) fn load_wav_mono_f32(path: &Path) -> Result<Vec<f32>> {
     let mut reader = hound::WavReader::open(path).context("Kunne ikke åbne WAV-fil")?;
     let spec = reader.spec();
 

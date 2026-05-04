@@ -25,6 +25,13 @@ interface DownloadProgress {
   percent: number;
 }
 
+type TranscriptionProvider = "local" | "openai";
+
+interface AppSettings {
+  openai_api_key: string | null;
+  transcription_provider: TranscriptionProvider;
+}
+
 let currentUid: string | null = null;
 let isRecording = false;
 let recordingStartTime: number | null = null;
@@ -66,6 +73,14 @@ const detailTitleInput = document.getElementById(
   "detail-title-input"
 ) as HTMLInputElement;
 const deleteBtn = document.getElementById("delete-btn") as HTMLButtonElement;
+const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
+const settingsOverlay = document.getElementById("settings-overlay")!;
+const openaiKeyInput = document.getElementById("openai-key-input") as HTMLInputElement;
+const transcriptionProviderInputs = Array.from(
+  document.querySelectorAll<HTMLInputElement>('input[name="transcription-provider"]')
+);
+const settingsSaveBtn = document.getElementById("settings-save-btn") as HTMLButtonElement;
+const settingsCancelBtn = document.getElementById("settings-cancel-btn") as HTMLButtonElement;
 const logBtn = document.getElementById("log-btn") as HTMLButtonElement;
 const logPanel = document.getElementById("log-panel")!;
 const logCloseBtn = document.getElementById(
@@ -105,6 +120,17 @@ function showWarning(message: string) {
   toast.textContent = message;
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 8000);
+}
+
+function setTranscriptionProvider(provider: TranscriptionProvider) {
+  for (const input of transcriptionProviderInputs) {
+    input.checked = input.value === provider;
+  }
+}
+
+function getTranscriptionProvider(): TranscriptionProvider {
+  const selected = transcriptionProviderInputs.find((input) => input.checked);
+  return selected?.value === "openai" ? "openai" : "local";
 }
 
 // ─── Transcription Formatting ───
@@ -454,6 +480,12 @@ async function deleteSelected() {
 // ─── Model Download ───
 
 async function checkModel() {
+  const settings: AppSettings = await invoke("get_settings");
+  if (settings.transcription_provider === "openai") {
+    modelOverlay.classList.add("hidden");
+    return;
+  }
+
   const ready: boolean = await invoke("check_model_status");
   if (!ready) {
     modelOverlay.classList.remove("hidden");
@@ -477,6 +509,47 @@ async function startModelDownload() {
 
 function setupListeners() {
   recordBtn.addEventListener("click", toggleRecording);
+
+  // Settings
+  settingsBtn.addEventListener("click", async () => {
+    const settings: AppSettings = await invoke("get_settings");
+    openaiKeyInput.value = settings.openai_api_key ?? "";
+    setTranscriptionProvider(settings.transcription_provider);
+    settingsOverlay.classList.remove("hidden");
+    openaiKeyInput.focus();
+  });
+  settingsSaveBtn.addEventListener("click", async () => {
+    const transcriptionProvider = getTranscriptionProvider();
+    if (transcriptionProvider === "openai" && !openaiKeyInput.value.trim()) {
+      showWarning("OpenAI-transskription kræver en API-nøgle.");
+      openaiKeyInput.focus();
+      return;
+    }
+
+    await invoke("save_settings", {
+      openaiApiKey: openaiKeyInput.value,
+      transcriptionProvider,
+    });
+    settingsOverlay.classList.add("hidden");
+    await checkModel();
+  });
+  settingsCancelBtn.addEventListener("click", () => {
+    settingsOverlay.classList.add("hidden");
+  });
+
+  // Dictation feedback
+  listen<boolean>("dictation-recording", (e) => {
+    if (e.payload) {
+      const dot = document.createElement("div");
+      dot.id = "dictation-indicator";
+      dot.className = "dictation-indicator";
+      dot.title = "Dikterer... (slip Fn for at stoppe)";
+      document.body.appendChild(dot);
+    } else {
+      document.getElementById("dictation-indicator")?.remove();
+    }
+  });
+
   logBtn.addEventListener("click", toggleLogPanel);
   logCloseBtn.addEventListener("click", () => logPanel.classList.add("hidden"));
   detailTitle.addEventListener("click", startRenaming);

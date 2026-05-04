@@ -15,9 +15,16 @@ pub struct ActiveRecording {
 // Safety: MicCapture and SystemAudioCaptureHandle are Send
 unsafe impl Send for ActiveRecording {}
 
+pub struct AnnaStateData {
+    pub prompt: String,
+    pub response: Option<String>,
+    pub is_error: bool,
+}
+
 pub struct AppState {
     pub recording: Arc<Mutex<Option<ActiveRecording>>>,
     pub data_dir: PathBuf,
+    pub anna: Mutex<Option<AnnaStateData>>,
 }
 
 impl AppState {
@@ -25,6 +32,7 @@ impl AppState {
         Self {
             recording: Arc::new(Mutex::new(None)),
             data_dir,
+            anna: Mutex::new(None),
         }
     }
 
