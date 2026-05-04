@@ -5,6 +5,7 @@ import { getCurrentWindow, LogicalPosition } from "@tauri-apps/api/window";
 interface AnnaState {
   prompt: string;
   response: string | null;
+  insert_text: string | null;
   is_error: boolean;
 }
 
@@ -17,22 +18,29 @@ const win = getCurrentWindow();
 const card = document.getElementById("card")!;
 const thinkingEl = document.getElementById("thinking")!;
 const responseText = document.getElementById("response-text")!;
+const insertWrap = document.getElementById("insert-wrap")!;
+const insertBtn = document.getElementById("insert-btn") as HTMLButtonElement;
 const copyBtn = document.getElementById("copy-btn")!;
 const closeBtn = document.getElementById("close-btn")!;
 let isOpen = false;
+let insertTextValue: string | null = null;
 
 // ── State helpers ──
 
 function showThinking() {
   thinkingEl.classList.remove("hidden");
   responseText.classList.remove("visible", "error");
+  insertWrap.classList.remove("visible");
+  insertTextValue = null;
 }
 
-function showResponse(response: string, isError: boolean) {
+function showResponse(response: string, isError: boolean, insertText: string | null) {
   thinkingEl.classList.add("hidden");
   responseText.textContent = response;
   responseText.classList.toggle("error", isError);
   responseText.classList.add("visible");
+  insertTextValue = insertText?.trim() ? insertText : null;
+  insertWrap.classList.toggle("visible", !isError && !!insertTextValue);
 }
 
 // ── Open ──
@@ -50,7 +58,7 @@ async function openPanel() {
   const state = await invoke<AnnaState | null>("get_anna_state");
   if (state) {
     if (state.response !== null) {
-      showResponse(state.response, state.is_error);
+      showResponse(state.response, state.is_error, state.insert_text);
     } else {
       showThinking();
     }
@@ -73,6 +81,23 @@ async function closePanel() {
   card.style.transition = "";
   showThinking();
   responseText.textContent = "";
+  insertWrap.classList.remove("visible");
+  insertTextValue = null;
+}
+
+async function insertAndClose() {
+  const text = insertTextValue?.trim();
+  if (!text) return;
+
+  // Hide Anna first so previous app/window regains focus, then paste there.
+  await closePanel();
+  try {
+    await new Promise((r) => setTimeout(r, 120));
+    await invoke("insert_anna_text", { text });
+  } catch (e) {
+    await openPanel();
+    showResponse(`Kunne ikke indsætte tekst: ${e}`, true, null);
+  }
 }
 
 // ── Events ──
@@ -84,8 +109,8 @@ listen("anna-show", () => openPanel());
 listen<{ prompt: string }>("anna-thinking", () => showThinking());
 
 // anna-response: response ready
-listen<{ prompt: string; response: string; error: boolean }>("anna-response", (e) => {
-  showResponse(e.payload.response, e.payload.error);
+listen<{ prompt: string; response: string; insert_text: string | null; error: boolean }>("anna-response", (e) => {
+  showResponse(e.payload.response, e.payload.error, e.payload.insert_text);
 });
 
 invoke<AnnaState | null>("get_anna_state")
@@ -104,7 +129,16 @@ copyBtn.addEventListener("click", () => {
 });
 
 closeBtn.addEventListener("click", closePanel);
+insertBtn.addEventListener("click", async () => {
+  await insertAndClose();
+});
 
 document.addEventListener("keydown", (e) => {
   if (e.key === "Escape") closePanel();
+  if ((e.key === "Enter" || e.key === "NumpadEnter") && insertTextValue) {
+    e.preventDefault();
+    void (async () => {
+      await insertAndClose();
+    })();
+  }
 });

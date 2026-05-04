@@ -151,6 +151,38 @@
 
       #response-text.visible { display: block; }
       #response-text.error { color: #e74c3c; }
+
+      .insert-wrap {
+        margin-top: 14px;
+        display: none;
+      }
+
+      .insert-wrap.visible {
+        display: block;
+      }
+
+      .insert-btn {
+        width: 100%;
+        border: none;
+        border-radius: 8px;
+        background: #4a90d9;
+        color: #ffffff;
+        font-size: 13px;
+        font-weight: 600;
+        padding: 10px 12px;
+        cursor: pointer;
+      }
+
+      .insert-btn:hover {
+        background: #5ba0e8;
+      }
+
+      .insert-hint {
+        margin-top: 8px;
+        text-align: center;
+        font-size: 12px;
+        color: rgba(255, 255, 255, 0.6);
+      }
     </style>
   </head>
   <body>
@@ -187,6 +219,10 @@
           <span>Tænker…</span>
         </div>
         <div id="response-text"></div>
+        <div id="insert-wrap" class="insert-wrap">
+          <button id="insert-btn" class="insert-btn" title="Indsæt tekst (Enter)">Indsæt tekst</button>
+          <div class="insert-hint">Tryk Enter for at indsætte og lukke</div>
+        </div>
       </div>
     </div>
   </body>
