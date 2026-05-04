@@ -178,8 +178,6 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
             }
 
             let mut mic: Option<MicCapture> = None;
-            let mut pending_screenshot: Option<Vec<u8>> = None;
-
             loop {
                 let fn_down = match rx.recv() {
                     Ok(v) => v,
@@ -190,12 +188,6 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                     app_log!("[dictation] Fn ned — starter mikrofon");
                     let _ = app.emit("dictation-recording", true);
                     crate::tray::set_icon(&app, crate::tray::TrayState::Recording);
-                    // Capture screenshot immediately so it reflects what's on screen
-                    // at the moment the user starts speaking (before they describe it).
-                    pending_screenshot = match crate::anna::take_screenshot() {
-                        Ok(b) => { app_log!("[dictation] Screenshot taget ({} bytes)", b.len()); Some(b) }
-                        Err(e) => { app_log!("[dictation] Screenshot fejl: {}", e); None }
-                    };
                     match MicCapture::new() {
                         Ok(m) => match m.start() {
                             Ok(()) => mic = Some(m),
@@ -222,8 +214,6 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                         let models = models_dir.clone();
                         let app_c = app.clone();
                         let data = data_dir.clone();
-                        let screenshot_for_anna = pending_screenshot.take();
-
                         std::thread::spawn(move || {
                             let settings = Settings::load(&data);
                             let transcription = match settings.transcription_provider {
@@ -277,6 +267,23 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                                     app_log!("[dictation] Transskriberet: {} → {}", raw, text);
 
                                     if let Some(command) = extract_anna_command(&text) {
+                                        let screenshot_for_anna = if crate::anna::needs_screenshot(&command) {
+                                            match crate::anna::take_screenshot_for_prompt(&command) {
+                                                Ok(b) => {
+                                                    app_log!(
+                                                        "[dictation] Screenshot taget ({} bytes)",
+                                                        b.len()
+                                                    );
+                                                    Some(b)
+                                                }
+                                                Err(e) => {
+                                                    app_log!("[dictation] Screenshot fejl: {}", e);
+                                                    None
+                                                }
+                                            }
+                                        } else {
+                                            None
+                                        };
                                         // anna::handle_query sætter tray til Thinking og Normal selv
                                         crate::anna::handle_query(&app_c, &command, screenshot_for_anna, &data);
                                     } else {

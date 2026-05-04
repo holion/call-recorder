@@ -66,12 +66,36 @@ type CGDirectDisplayID = u32;
 type CGImageRef = *mut c_void;
 type CFMutableDataRef = *mut c_void;
 type CFStringRef = *const c_void;
+#[repr(C)]
+struct CGRect {
+    origin: CGPoint,
+    size: CGSize,
+}
+#[repr(C)]
+struct CGPoint {
+    x: f64,
+    y: f64,
+}
+#[repr(C)]
+struct CGSize {
+    width: f64,
+    height: f64,
+}
+type CGWindowID = u32;
+type CGWindowListOption = u32;
+type CGWindowImageOption = u32;
 
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGMainDisplayID() -> CGDirectDisplayID;
     fn CGDisplayCreateImage(display_id: CGDirectDisplayID) -> CGImageRef;
     fn CGImageRelease(image: CGImageRef);
+    fn CGWindowListCreateImage(
+        screen_bounds: CGRect,
+        list_option: CGWindowListOption,
+        window_id: CGWindowID,
+        image_option: CGWindowImageOption,
+    ) -> CGImageRef;
 }
 
 #[link(name = "ImageIO", kind = "framework")]
@@ -100,42 +124,47 @@ extern "C" {
 }
 
 const KCF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
+const K_CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
+const K_CG_WINDOW_IMAGE_DEFAULT: CGWindowImageOption = 0;
+const K_CG_WINDOW_IMAGE_BOUNDS_IGNORE_FRAMING: CGWindowImageOption = 1 << 0;
 
-pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
+fn frontmost_window_id() -> Option<CGWindowID> {
+    let out = Command::new("osascript")
+        .arg("-e")
+        .arg("tell application \"System Events\" to tell (first process whose frontmost is true) to get value of attribute \"AXWindowNumber\" of front window")
+        .output()
+        .ok()?;
+    if !out.status.success() {
+        return None;
+    }
+    let txt = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    txt.parse::<u32>().ok()
+}
+
+fn encode_cg_image_as_jpeg(image: CGImageRef) -> Result<Vec<u8>, String> {
     unsafe {
-        let display = CGMainDisplayID();
-        let image = CGDisplayCreateImage(display);
-        if image.is_null() {
-            return Err(
-                "CGDisplayCreateImage fejlede — mangler Screen Recording-tilladelse?".into(),
-            );
-        }
-
         let data = CFDataCreateMutable(std::ptr::null(), 0);
         if data.is_null() {
-            CGImageRelease(image);
             return Err("CFDataCreateMutable fejlede".into());
         }
 
-        let type_str = CString::new("public.jpeg").unwrap();
-        let png_cfstr = CFStringCreateWithCString(
+        let type_str = CString::new("public.jpeg").map_err(|e| format!("CString fejl: {}", e))?;
+        let jpeg_cfstr = CFStringCreateWithCString(
             std::ptr::null(),
-            type_str.as_ptr() as *const i8,
+            type_str.as_ptr(),
             KCF_STRING_ENCODING_UTF8,
         );
 
-        let dest = CGImageDestinationCreateWithData(data, png_cfstr, 1, std::ptr::null());
-        CFRelease(png_cfstr as *const c_void);
+        let dest = CGImageDestinationCreateWithData(data, jpeg_cfstr, 1, std::ptr::null());
+        CFRelease(jpeg_cfstr as *const c_void);
 
         if dest.is_null() {
-            CGImageRelease(image);
             CFRelease(data as *const c_void);
             return Err("CGImageDestinationCreateWithData fejlede".into());
         }
 
         CGImageDestinationAddImage(dest, image, std::ptr::null());
         let ok = CGImageDestinationFinalize(dest);
-        CGImageRelease(image);
         CFRelease(dest as *const c_void);
 
         if !ok {
@@ -147,12 +176,73 @@ pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
         let ptr = CFDataGetBytePtr(data);
         let bytes = std::slice::from_raw_parts(ptr, len).to_vec();
         CFRelease(data as *const c_void);
-
         Ok(bytes)
     }
 }
 
-fn needs_screenshot(prompt: &str) -> bool {
+pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
+    unsafe {
+        let display = CGMainDisplayID();
+        let image = CGDisplayCreateImage(display);
+        if image.is_null() {
+            return Err(
+                "CGDisplayCreateImage fejlede — mangler Screen Recording-tilladelse?".into(),
+            );
+        }
+
+        let bytes = encode_cg_image_as_jpeg(image);
+        CGImageRelease(image);
+        bytes
+    }
+}
+
+fn wants_full_screen(prompt: &str) -> bool {
+    let l = prompt.to_lowercase();
+    [
+        "hele skærmen",
+        "hele skærm",
+        "hele desktop",
+        "entire screen",
+        "full screen",
+    ]
+    .iter()
+    .any(|k| l.contains(k))
+}
+
+pub(crate) fn take_screenshot_for_prompt(prompt: &str) -> Result<Vec<u8>, String> {
+    if wants_full_screen(prompt) {
+        app_log!("[anna] Screenshot-mode: hele skærmen");
+        return take_screenshot();
+    }
+
+    unsafe {
+        if let Some(window_id) = frontmost_window_id() {
+            let image = CGWindowListCreateImage(
+                CGRect {
+                    origin: CGPoint { x: 0.0, y: 0.0 },
+                    size: CGSize {
+                        width: 0.0,
+                        height: 0.0,
+                    },
+                },
+                K_CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY,
+                window_id,
+                K_CG_WINDOW_IMAGE_DEFAULT | K_CG_WINDOW_IMAGE_BOUNDS_IGNORE_FRAMING,
+            );
+            if !image.is_null() {
+                app_log!("[anna] Screenshot-mode: aktivt vindue");
+                let bytes = encode_cg_image_as_jpeg(image);
+                CGImageRelease(image);
+                return bytes;
+            }
+        }
+    }
+
+    app_log!("[anna] Kunne ikke fange aktivt vindue; falder tilbage til hele skærmen");
+    take_screenshot()
+}
+
+pub(crate) fn needs_screenshot(prompt: &str) -> bool {
     let l = prompt.to_lowercase();
     ["skærm", "skærmen", "skærmbillede", "screenshot", "se på"]
         .iter()
@@ -207,7 +297,8 @@ fn frontmost_app_bundle_id() -> Option<String> {
 // ── OpenAI call ────────────────────────────────────────────────────────
 
 const SYSTEM: &str = "Du er Anna, en hjælpsom AI-assistent for et dansk salgsteam. \
-    Svar præcist og kortfattet på dansk. \
+    Svar præcist og kortfattet på samme sprog som i samtalen/teksten i screenshotet. \
+    Hvis sproget i screenshotet er uklart, svar på dansk. \
     Når du foreslår tekst, skal du matche konteksten i screenshotet: \
     Hvis det ligner e-mail, så brug passende formel/professionel tone. \
     Hvis det ligner chat/Slack/Teams/SMS, så brug en kortere og mere uformel tone. \
@@ -384,7 +475,8 @@ fn call_openai(
         "[anna] Refusal detekteret. Forsøger én retry med snævrere prompt (screenshot beholdes)."
     );
 
-    let retry_guidance = "Brugeren ønsker hjælp til at formulere et venligt, harmløst tekstsvar på dansk. \
+    let retry_guidance = "Brugeren ønsker hjælp til at formulere et venligt, harmløst tekstsvar. \
+        Brug samme sprog som i samtalen/teksten i screenshotet. Hvis uklart, brug dansk. \
         Svar kort, konkret og uden ekstra sikkerhedsformuleringer.";
     let (retry_payload, retry_refusal) =
         call_openai_once(api_key, prompt, retry_guidance, screenshot.clone())?;
