@@ -251,12 +251,15 @@ pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>,
     } else {
         None
     };
-    app_log!("[anna] Sender til OpenAI: \"{}\"", command);
+    app_log!("[anna] Sender til OpenAI: \"{}\" (screenshot: {})", command, if used_screenshot.is_some() { "ja" } else { "nej" });
+
+    crate::tray::set_icon(app, crate::tray::TrayState::Thinking);
 
     match call_openai(&api_key, command, used_screenshot) {
         Ok(response) => {
             app_log!("[anna] Svar modtaget: {}", response);
             set_anna_state(app, command, Some(&response), false);
+            crate::tray::set_icon(app, crate::tray::TrayState::Normal);
             let _ = app.emit(
                 "anna-response",
                 serde_json::json!({
@@ -270,6 +273,7 @@ pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>,
             app_log!("[anna] Fejl: {}", e);
             let msg = format!("Fejl: {}", e);
             set_anna_state(app, command, Some(&msg), true);
+            crate::tray::set_icon(app, crate::tray::TrayState::Normal);
             let _ = app.emit(
                 "anna-response",
                 serde_json::json!({

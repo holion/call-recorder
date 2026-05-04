@@ -8,6 +8,7 @@ mod logging;
 mod settings;
 mod state;
 mod transcription;
+mod tray;
 
 use serde::Serialize;
 use state::AppState;
@@ -517,7 +518,7 @@ fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
 
     let menu = Menu::with_items(app, &[&start, &stop, &open, &quit])?;
 
-    TrayIconBuilder::new()
+    TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().unwrap().clone())
         .menu(&menu)
         .on_menu_event(|app, event| match event.id.as_ref() {

@@ -259,6 +259,7 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                 if fn_down {
                     app_log!("[dictation] Fn ned — starter mikrofon");
                     let _ = app.emit("dictation-recording", true);
+                    crate::tray::set_icon(&app, crate::tray::TrayState::Recording);
                     // Capture screenshot immediately so it reflects what's on screen
                     // at the moment the user starts speaking (before they describe it).
                     pending_screenshot = match crate::anna::take_screenshot() {
@@ -337,25 +338,32 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
 
                             match transcription {
                                 Ok(segs) if !segs.is_empty() => {
-                                    let text = segs
+                                    let raw = segs
                                         .iter()
                                         .map(|s| s.text.as_str())
                                         .collect::<Vec<_>>()
                                         .join(" ");
-                                    app_log!("[dictation] Transskriberet: {}", text);
+                                    let text = crate::transcription::cleaner::clean(&raw);
+                                    app_log!("[dictation] Transskriberet: {} → {}", raw, text);
 
                                     if let Some(command) = extract_anna_command(&text) {
+                                        // anna::handle_query sætter tray til Thinking og Normal selv
                                         crate::anna::handle_query(&app_c, &command, screenshot_for_anna, &data);
-                                    } else if let Err(e) = insert_text(&text) {
-                                        app_log!("[dictation] Indsættelsesfejl: {}", e);
-                                        let _ = app_c.emit("dictation-error", e);
+                                    } else {
+                                        crate::tray::set_icon(&app_c, crate::tray::TrayState::Normal);
+                                        if let Err(e) = insert_text(&text) {
+                                            app_log!("[dictation] Indsættelsesfejl: {}", e);
+                                            let _ = app_c.emit("dictation-error", e);
+                                        }
                                     }
                                 }
                                 Ok(_) => {
                                     app_log!("[dictation] Ingen tale registreret");
+                                    crate::tray::set_icon(&app_c, crate::tray::TrayState::Normal);
                                 }
                                 Err(e) => {
                                     app_log!("[dictation] Transskription fejl: {}", e);
+                                    crate::tray::set_icon(&app_c, crate::tray::TrayState::Normal);
                                 }
                             }
                         });
