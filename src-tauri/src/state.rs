@@ -18,6 +18,8 @@ unsafe impl Send for ActiveRecording {}
 pub struct AnnaStateData {
     pub prompt: String,
     pub response: Option<String>,
+    pub insert_text: Option<String>,
+    pub target_bundle_id: Option<String>,
     pub is_error: bool,
 }
 

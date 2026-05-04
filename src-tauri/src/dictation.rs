@@ -9,10 +9,13 @@ use std::sync::{
 };
 
 use crate::app_log;
-use crate::audio::capture::MicCapture;
-use crate::audio::mixer::resample;
 use crate::settings::{Settings, TranscriptionProvider};
 use crate::transcription::{model, whisper::Transcriber};
+use crate::{
+    audio::capture::MicCapture,
+    audio::mixer::resample,
+    text_insert,
+};
 use tauri::Emitter;
 
 // ── FFI types ──────────────────────────────────────────────────────────
@@ -53,10 +56,7 @@ extern "C" {
         user_info: *mut c_void,
     ) -> CFMachPortRef;
     fn CGEventGetFlags(event: CGEventRef) -> CGEventFlags;
-    fn CGEventSetFlags(event: CGEventRef, flags: CGEventFlags);
     fn CGEventTapEnable(tap: CFMachPortRef, enable: bool);
-    fn CGEventCreateKeyboardEvent(source: *mut c_void, keycode: u16, key_down: bool) -> CGEventRef;
-    fn CGEventPost(tap: u32, event: CGEventRef);
 }
 
 #[link(name = "CoreFoundation", kind = "framework")]
@@ -69,13 +69,11 @@ extern "C" {
     fn CFRunLoopAddSource(rl: CFRunLoopRef, source: CFRunLoopSourceRef, mode: CFStringRef);
     fn CFRunLoopGetCurrent() -> CFRunLoopRef;
     fn CFRunLoopRun();
-    fn CFRelease(cf: *const c_void);
     static kCFRunLoopCommonModes: CFStringRef;
 }
 
 #[link(name = "ApplicationServices", kind = "framework")]
 extern "C" {
-    fn AXIsProcessTrusted() -> bool;
 }
 
 // ── Global event tap state ─────────────────────────────────────────────
@@ -111,74 +109,6 @@ extern "C" fn tap_callback(
     }
 
     event
-}
-
-// ── Text insertion ─────────────────────────────────────────────────────
-//
-// kAXSelectedTextAttribute is read-only on macOS and silently ignores writes.
-// The universal approach is: write text to clipboard via pbcopy, then post
-// a Cmd+V keyboard event so the focused app pastes it.
-
-const KCG_EVENT_FLAG_MASK_COMMAND: CGEventFlags = 0x0010_0000;
-// kVK_Command = 0x37, kVK_ANSI_V = 0x09
-const VK_COMMAND: u16 = 0x37;
-const VK_V: u16 = 0x09;
-
-fn insert_text(text: &str) -> Result<(), String> {
-    set_clipboard(text)?;
-    // Give the pasteboard time to propagate before sending Cmd+V.
-    std::thread::sleep(std::time::Duration::from_millis(80));
-    simulate_paste()
-}
-
-fn set_clipboard(text: &str) -> Result<(), String> {
-    use std::io::Write;
-    use std::process::{Command, Stdio};
-
-    let mut child = Command::new("pbcopy")
-        .stdin(Stdio::piped())
-        .spawn()
-        .map_err(|e| format!("pbcopy fejlede: {}", e))?;
-
-    if let Some(stdin) = child.stdin.as_mut() {
-        stdin
-            .write_all(text.as_bytes())
-            .map_err(|e| format!("Skriv til pbcopy fejlede: {}", e))?;
-    }
-    child
-        .wait()
-        .map_err(|e| format!("pbcopy afventing fejlede: {}", e))?;
-    Ok(())
-}
-
-fn simulate_paste() -> Result<(), String> {
-    unsafe {
-        if !AXIsProcessTrusted() {
-            return Err(
-                "Accessibility-tilladelse mangler — giv tilladelse i Systemindstillinger > Sikkerhed > Tilgængelighed".into()
-            );
-        }
-
-        let cmd_down = CGEventCreateKeyboardEvent(std::ptr::null_mut(), VK_COMMAND, true);
-        let v_down = CGEventCreateKeyboardEvent(std::ptr::null_mut(), VK_V, true);
-        let v_up = CGEventCreateKeyboardEvent(std::ptr::null_mut(), VK_V, false);
-        let cmd_up = CGEventCreateKeyboardEvent(std::ptr::null_mut(), VK_COMMAND, false);
-
-        // Mark v press/release as having Command held
-        CGEventSetFlags(v_down, KCG_EVENT_FLAG_MASK_COMMAND);
-        CGEventSetFlags(v_up, KCG_EVENT_FLAG_MASK_COMMAND);
-
-        CGEventPost(KCG_HID_EVENT_TAP, cmd_down);
-        CGEventPost(KCG_HID_EVENT_TAP, v_down);
-        CGEventPost(KCG_HID_EVENT_TAP, v_up);
-        CGEventPost(KCG_HID_EVENT_TAP, cmd_up);
-
-        CFRelease(cmd_down as *const c_void);
-        CFRelease(v_down as *const c_void);
-        CFRelease(v_up as *const c_void);
-        CFRelease(cmd_up as *const c_void);
-    }
-    Ok(())
 }
 
 // ── Entry point ────────────────────────────────────────────────────────
@@ -351,7 +281,7 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                                         crate::anna::handle_query(&app_c, &command, screenshot_for_anna, &data);
                                     } else {
                                         crate::tray::set_icon(&app_c, crate::tray::TrayState::Normal);
-                                        if let Err(e) = insert_text(&text) {
+                                        if let Err(e) = text_insert::insert_text(&text) {
                                             app_log!("[dictation] Indsættelsesfejl: {}", e);
                                             let _ = app_c.emit("dictation-error", e);
                                         }

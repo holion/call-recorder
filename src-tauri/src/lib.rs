@@ -7,6 +7,7 @@ mod google_auth;
 mod logging;
 mod settings;
 mod state;
+mod text_insert;
 mod transcription;
 mod tray;
 
@@ -485,6 +486,7 @@ async fn get_openai_key(state: State<'_, AppState>) -> Result<Option<String>, St
 struct AnnaStateDto {
     prompt: String,
     response: Option<String>,
+    insert_text: Option<String>,
     is_error: bool,
 }
 
@@ -493,8 +495,29 @@ fn get_anna_state(state: State<'_, AppState>) -> Option<AnnaStateDto> {
     state.anna.lock().ok()?.as_ref().map(|s| AnnaStateDto {
         prompt: s.prompt.clone(),
         response: s.response.clone(),
+        insert_text: s.insert_text.clone(),
         is_error: s.is_error,
     })
+}
+
+#[tauri::command]
+fn insert_anna_text(text: String, state: State<'_, AppState>) -> Result<(), String> {
+    let target_bundle_id = state
+        .anna
+        .lock()
+        .ok()
+        .and_then(|s| s.as_ref().and_then(|x| x.target_bundle_id.clone()));
+
+    if let Some(bundle_id) = target_bundle_id {
+        if let Err(e) = text_insert::activate_app_by_bundle_id(&bundle_id) {
+            app_log!("[anna] Kunne ikke aktivere target app {}: {}", bundle_id, e);
+        } else {
+            // Give macOS a beat to switch focus before paste.
+            std::thread::sleep(std::time::Duration::from_millis(120));
+        }
+    }
+
+    text_insert::insert_text(&text)
 }
 
 #[tauri::command]
@@ -597,6 +620,7 @@ pub fn run() {
             get_openai_key,
             save_openai_key,
             get_anna_state,
+            insert_anna_text,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
