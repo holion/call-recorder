@@ -115,11 +115,9 @@ extern "C" fn tap_callback(
 
 fn extract_anna_command(text: &str) -> Option<String> {
     let lower = text.to_lowercase();
-    for trigger in &["hey anna", "hej anna", "hey, anna", "hej, anna"] {
-        if lower.starts_with(trigger) {
-            let rest = text[trigger.len()..].trim_start_matches([',', '.', ' ', '\n']);
-            return Some(rest.to_string());
-        }
+    if lower.starts_with("anna") {
+        let rest = text["anna".len()..].trim_start_matches([',', '.', ' ', '\n']);
+        return Some(rest.to_string());
     }
     None
 }
@@ -237,6 +235,7 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                         let data = data_dir.clone();
                         std::thread::spawn(move || {
                             let settings = Settings::load(&data);
+                            let openai_key = app_c.state::<crate::state::AppState>().get_openai_key();
                             let transcription = match settings.transcription_provider {
                                 TranscriptionProvider::Local => {
                                     let mut guard = t_arc.lock().unwrap();
@@ -254,8 +253,7 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                                     t.transcribe_audio(&samples, "Diktation")
                                 }
                                 TranscriptionProvider::Openai => {
-                                    let Some(api_key) = settings
-                                        .openai_api_key
+                                    let Some(api_key) = openai_key
                                         .as_deref()
                                         .map(str::trim)
                                         .filter(|key| !key.is_empty())
