@@ -198,6 +198,7 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                 } else {
                     app_log!("[dictation] Fn op — stopper og transskriberer");
                     let _ = app.emit("dictation-recording", false);
+                    crate::tray::set_icon(&app, crate::tray::TrayState::Thinking);
 
                     if let Some(mut m) = mic.take() {
                         let _ = m.stop();
