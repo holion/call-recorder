@@ -508,10 +508,10 @@ async function startModelDownload() {
 // ─── Event Listeners ───
 
 function setupListeners() {
-  recordBtn.addEventListener("click", toggleRecording);
+  recordBtn?.addEventListener("click", toggleRecording);
 
   // Settings
-  settingsBtn.addEventListener("click", async () => {
+  settingsBtn?.addEventListener("click", async () => {
     const settings: AppSettings = await invoke("get_settings");
     openaiKeyInput.value = settings.openai_api_key ?? "";
     setTranscriptionProvider(settings.transcription_provider);
@@ -550,17 +550,17 @@ function setupListeners() {
     }
   });
 
-  logBtn.addEventListener("click", toggleLogPanel);
-  logCloseBtn.addEventListener("click", () => logPanel.classList.add("hidden"));
-  detailTitle.addEventListener("click", startRenaming);
-  detailTitleInput.addEventListener("blur", finishRenaming);
-  detailTitleInput.addEventListener("keydown", (e) => {
+  logBtn?.addEventListener("click", toggleLogPanel);
+  logCloseBtn?.addEventListener("click", () => logPanel.classList.add("hidden"));
+  detailTitle?.addEventListener("click", startRenaming);
+  detailTitleInput?.addEventListener("blur", finishRenaming);
+  detailTitleInput?.addEventListener("keydown", (e) => {
     if (e.key === "Enter") detailTitleInput.blur();
     if (e.key === "Escape") cancelRenaming();
   });
-  copyBtn.addEventListener("click", copyTranscription);
-  retranscribeBtn.addEventListener("click", retranscribe);
-  deleteBtn.addEventListener("click", deleteSelected);
+  copyBtn?.addEventListener("click", copyTranscription);
+  retranscribeBtn?.addEventListener("click", retranscribe);
+  deleteBtn?.addEventListener("click", deleteSelected);
   downloadBtn.addEventListener("click", startModelDownload);
   skipDownloadBtn.addEventListener("click", () =>
     modelOverlay.classList.add("hidden")
