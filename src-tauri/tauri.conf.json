@@ -1,6 +1,6 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
-  "productName": "Call Recorder",
+  "productName": "Anna",
   "version": "0.1.0",
   "identifier": "dk.holion.call-recorder",
   "build": {
