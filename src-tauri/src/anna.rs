@@ -268,12 +268,65 @@ fn wants_insert_text(prompt: &str) -> bool {
     .any(|k| l.contains(k))
 }
 
-fn frontmost_app_bundle_id() -> Option<String> {
+fn frontmost_app_info() -> (Option<String>, Option<String>) {
     let output = Command::new("osascript")
         .arg("-e")
         .arg(
-            "tell application \"System Events\" to get bundle identifier of first process whose frontmost is true",
+            "tell application \"System Events\"\n\
+             set p to first process whose frontmost is true\n\
+             return (bundle identifier of p) & \"\t\" & (name of p)\n\
+             end tell",
         )
+        .output()
+        .ok();
+
+    let output = match output {
+        Some(o) if o.status.success() => o,
+        _ => return (None, None),
+    };
+
+    let raw = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let mut parts = raw.splitn(2, '\t');
+    let bundle = parts.next().unwrap_or("").to_string();
+    let name = parts.next().unwrap_or("").to_string();
+
+    // Ignore our own app if it happens to be frontmost at capture time.
+    if bundle.is_empty() || bundle == "dk.holion.call-recorder" {
+        return (None, None);
+    }
+
+    let name = if name.is_empty() { None } else { Some(name) };
+    (Some(bundle), name)
+}
+
+fn is_chromium_browser(bundle_id: &str) -> bool {
+    matches!(
+        bundle_id,
+        "company.thebrowser.Browser" // Arc
+            | "com.google.Chrome"
+            | "com.brave.Browser"
+            | "com.microsoft.edgemac"
+            | "org.chromium.Chromium"
+            | "com.operasoftware.Opera"
+            | "com.vivaldi.Vivaldi"
+    )
+}
+
+fn frontmost_browser_tab_title(app_name: &str, bundle_id: &str) -> Option<String> {
+    let script = if bundle_id == "com.apple.Safari" {
+        "tell application \"Safari\" to get name of current tab of front window".to_string()
+    } else if is_chromium_browser(bundle_id) {
+        format!(
+            "tell application \"{}\" to get title of active tab of front window",
+            app_name
+        )
+    } else {
+        return None;
+    };
+
+    let output = Command::new("osascript")
+        .arg("-e")
+        .arg(&script)
         .output()
         .ok()?;
 
@@ -281,17 +334,12 @@ fn frontmost_app_bundle_id() -> Option<String> {
         return None;
     }
 
-    let bundle = String::from_utf8_lossy(&output.stdout).trim().to_string();
-    if bundle.is_empty() {
-        return None;
+    let title = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    if title.is_empty() {
+        None
+    } else {
+        Some(title)
     }
-
-    // Ignore our own app id if it happens to be frontmost at capture time.
-    if bundle == "dk.holion.call-recorder" {
-        return None;
-    }
-
-    Some(bundle)
 }
 
 // ── OpenAI call ────────────────────────────────────────────────────────
@@ -363,20 +411,30 @@ fn call_openai_once(
     prompt: &str,
     guidance_text: &str,
     screenshot: Option<Vec<u8>>,
+    app_name: Option<&str>,
 ) -> Result<(AnnaPayload, bool), String> {
     let user_content = match screenshot {
         Some(bytes) => {
             let encoded = B64.encode(&bytes);
-            serde_json::json!([
-                { "type": "text", "text": guidance_text },
-                { "type": "text", "text": prompt },
-                { "type": "image_url", "image_url": {
-                    "url": format!("data:image/jpeg;base64,{}", encoded),
-                    "detail": "high"
-                }}
-            ])
+            let mut parts = vec![];
+            if let Some(ctx) = app_name {
+                parts.push(serde_json::json!({ "type": "text", "text": ctx }));
+            }
+            parts.push(serde_json::json!({ "type": "text", "text": guidance_text }));
+            parts.push(serde_json::json!({ "type": "text", "text": prompt }));
+            parts.push(serde_json::json!({ "type": "image_url", "image_url": {
+                "url": format!("data:image/jpeg;base64,{}", encoded),
+                "detail": "high"
+            }}));
+            serde_json::Value::Array(parts)
         }
-        None => serde_json::json!(prompt),
+        None => match app_name {
+            Some(ctx) => serde_json::json!([
+                { "type": "text", "text": ctx },
+                { "type": "text", "text": prompt }
+            ]),
+            None => serde_json::json!(prompt),
+        },
     };
 
     let body = Request {
@@ -459,13 +517,14 @@ fn call_openai(
     prompt: &str,
     require_insert_text: bool,
     screenshot: Option<Vec<u8>>,
+    app_name: Option<&str>,
 ) -> Result<AnnaPayload, String> {
     let primary_guidance = "Der er vedhæftet et skærmbillede. Brug det aktivt til dit svar. \
         Skriv ikke, at du ikke kan se billedet. Hvis noget er uklart, skriv præcist hvad der er uklart. \
         Tilpas formalitet og længde til mediet i screenshotet (mail vs chat).";
 
     let (first_payload, first_refusal) =
-        call_openai_once(api_key, prompt, primary_guidance, screenshot.clone())?;
+        call_openai_once(api_key, prompt, primary_guidance, screenshot.clone(), app_name)?;
 
     if !first_refusal {
         return Ok(first_payload);
@@ -479,7 +538,7 @@ fn call_openai(
         Brug samme sprog som i samtalen/teksten i screenshotet. Hvis uklart, brug dansk. \
         Svar kort, konkret og uden ekstra sikkerhedsformuleringer.";
     let (retry_payload, retry_refusal) =
-        call_openai_once(api_key, prompt, retry_guidance, screenshot.clone())?;
+        call_openai_once(api_key, prompt, retry_guidance, screenshot.clone(), app_name)?;
     if !retry_refusal {
         app_log!("[anna] Retry lykkedes uden refusal.");
         if !require_insert_text
@@ -503,7 +562,7 @@ fn call_openai(
             insert_text skal være den nøjagtige tekst, der skal indsættes direkte, \
             uden introduktioner eller forklaringer.";
         let (strict_payload, _strict_refusal) =
-            call_openai_once(api_key, prompt, strict_guidance, screenshot.clone())?;
+            call_openai_once(api_key, prompt, strict_guidance, screenshot.clone(), app_name)?;
         if strict_payload
             .insert_text
             .as_deref()
@@ -546,7 +605,18 @@ fn set_anna_state(
 
 pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>, data_dir: &Path) {
     let settings = Settings::load(data_dir);
-    let target_bundle_id = frontmost_app_bundle_id();
+    let (target_bundle_id, app_name) = frontmost_app_info();
+    let tab_title = match (app_name.as_deref(), target_bundle_id.as_deref()) {
+        (Some(name), Some(bundle)) => frontmost_browser_tab_title(name, bundle),
+        _ => None,
+    };
+    app_log!("[anna] Aktiv app: {:?}, bundle: {:?}, tab: {:?}", app_name, target_bundle_id, tab_title);
+
+    let app_context: Option<String> = match (app_name.as_deref(), tab_title.as_deref()) {
+        (Some(name), Some(tab)) => Some(format!("Aktiv app: {}.\nAktiv tab: \"{}\".", name, tab)),
+        (Some(name), None) => Some(format!("Aktiv app: {}.", name)),
+        _ => None,
+    };
 
     let api_key = match settings.openai_api_key.as_deref() {
         Some(k) if !k.trim().is_empty() => k.trim().to_string(),
@@ -600,7 +670,7 @@ pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>,
     crate::tray::set_icon(app, crate::tray::TrayState::Thinking);
 
     let needs_insert = wants_insert_text(command);
-    match call_openai(&api_key, command, needs_insert, used_screenshot.clone()) {
+    match call_openai(&api_key, command, needs_insert, used_screenshot.clone(), app_context.as_deref()) {
         Ok(mut payload) => {
             if needs_insert
                 && payload
