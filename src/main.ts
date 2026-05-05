@@ -705,6 +705,16 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
   setupPermissionsListeners();
 
+  const hasAccessibility: boolean = await invoke("check_accessibility_permission");
+  if (!hasAccessibility) {
+    permissionsOverlay.classList.remove("hidden");
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    await win.show();
+    await win.setFocus();
+    startPermissionPolling();
+  }
+
   const user = await initAuth();
   if (user) {
     startApp(user.uid);

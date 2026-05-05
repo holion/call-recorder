@@ -638,8 +638,6 @@ pub fn run() {
 
                 if !is_accessibility_trusted() {
                     app_log!("[permissions] Accessibility-tilladelse mangler");
-                    let _ = app.emit("permissions-needed", ());
-                    open_accessibility_settings();
                 }
             }
 
