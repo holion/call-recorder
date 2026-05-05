@@ -9,7 +9,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "emulators": "firebase emulators:start"
+    "emulators": "firebase emulators:start",
+    "clean": "rm -rf ~/Library/WebKit/dk.holion.call-recorder ~/Library/Application\\ Support/dk.holion.call-recorder/WebKit"
   },
   "dependencies": {
     "@tauri-apps/api": "^2",
