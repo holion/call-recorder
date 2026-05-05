@@ -20,6 +20,17 @@ use tauri::{
     AppHandle, Emitter, Manager, State,
 };
 
+#[cfg(target_os = "macos")]
+#[link(name = "ApplicationServices", kind = "framework")]
+extern "C" {
+    fn AXIsProcessTrusted() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+fn is_accessibility_trusted() -> bool {
+    unsafe { AXIsProcessTrusted() }
+}
+
 // ─── Tauri Commands ───
 
 #[tauri::command]
@@ -532,6 +543,28 @@ async fn save_openai_key(key: String, state: State<'_, AppState>) -> Result<(), 
     s.save(&state.data_dir)
 }
 
+// ─── Permission commands ───
+
+#[tauri::command]
+fn check_accessibility_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    return is_accessibility_trusted();
+    #[cfg(not(target_os = "macos"))]
+    return true;
+}
+
+#[tauri::command]
+fn open_accessibility_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
+        .spawn();
+}
+
+#[tauri::command]
+fn restart_app(app: AppHandle) {
+    app.restart();
+}
+
 // ─── App Setup ───
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
@@ -602,6 +635,12 @@ pub fn run() {
                     .expect("Kunne ikke finde app data mappe");
 
                 dictation::start(app.handle().clone(), data_dir2);
+
+                if !is_accessibility_trusted() {
+                    app_log!("[permissions] Accessibility-tilladelse mangler");
+                    let _ = app.emit("permissions-needed", ());
+                    open_accessibility_settings();
+                }
             }
 
             let handle = app.handle().clone();
@@ -642,6 +681,9 @@ pub fn run() {
             save_openai_key,
             get_anna_state,
             insert_anna_text,
+            check_accessibility_permission,
+            open_accessibility_settings,
+            restart_app,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

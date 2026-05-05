@@ -10,6 +10,22 @@
 
   <body>
     <div id="app">
+      <!-- Permissions overlay -->
+      <div id="permissions-overlay" class="overlay hidden">
+        <div class="overlay-content">
+          <h2>Tilladelser mangler</h2>
+          <p>Anna har brug for <strong>Tilgængelighed</strong> for at kunne lytte på Fn-tasten og indsætte tekst.</p>
+          <p class="settings-hint">Systemindstillinger er åbnet. Tilføj Anna under <em>Sikkerhed &amp; Anonymitet → Tilgængelighed</em> og genstart derefter appen.</p>
+          <div id="permissions-granted-msg" class="hidden" style="color: #34c759; margin-bottom: 12px;">
+            ✓ Tilladelse givet — genstart Anna for at aktivere den.
+          </div>
+          <div class="overlay-actions">
+            <button id="permissions-restart-btn" class="btn btn-primary hidden">Genstart Anna</button>
+            <button id="permissions-settings-btn" class="btn btn-secondary">Åbn Systemindstillinger igen</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Auth overlay -->
       <div id="auth-overlay" class="overlay">
         <div class="overlay-content">

@@ -627,6 +627,46 @@ function setupListeners() {
   });
 }
 
+// ─── Permissions ───
+
+const permissionsOverlay = document.getElementById("permissions-overlay")!;
+const permissionsGrantedMsg = document.getElementById("permissions-granted-msg")!;
+const permissionsRestartBtn = document.getElementById("permissions-restart-btn") as HTMLButtonElement;
+const permissionsSettingsBtn = document.getElementById("permissions-settings-btn") as HTMLButtonElement;
+
+let permissionPollInterval: number | null = null;
+
+function startPermissionPolling() {
+  permissionPollInterval = window.setInterval(async () => {
+    const granted: boolean = await invoke("check_accessibility_permission");
+    if (granted) {
+      clearInterval(permissionPollInterval!);
+      permissionsGrantedMsg.classList.remove("hidden");
+      permissionsRestartBtn.classList.remove("hidden");
+      permissionsSettingsBtn.classList.add("hidden");
+    }
+  }, 2000);
+}
+
+function setupPermissionsListeners() {
+  listen("permissions-needed", async () => {
+    permissionsOverlay.classList.remove("hidden");
+    const { getCurrentWindow } = await import("@tauri-apps/api/window");
+    const win = getCurrentWindow();
+    await win.show();
+    await win.setFocus();
+    startPermissionPolling();
+  });
+
+  permissionsSettingsBtn.addEventListener("click", () => {
+    invoke("open_accessibility_settings");
+  });
+
+  permissionsRestartBtn.addEventListener("click", () => {
+    invoke("restart_app");
+  });
+}
+
 // ─── Auth & App Init ───
 
 function startApp(uid: string) {
@@ -663,6 +703,7 @@ window.addEventListener("beforeunload", () => cleanupSubscriptions());
 
 window.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
+  setupPermissionsListeners();
 
   const user = await initAuth();
   if (user) {
