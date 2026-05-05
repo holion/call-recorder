@@ -56,7 +56,7 @@ jobs:
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         with:
           tagName: ${{ github.ref_name }}
-          releaseName: 'Call Recorder ${{ github.ref_name }}'
+          releaseName: 'Anna ${{ github.ref_name }}'
           releaseBody: 'Se commits for detaljer.'
           releaseDraft: false
           prerelease: false

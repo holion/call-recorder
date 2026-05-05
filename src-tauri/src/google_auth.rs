@@ -60,7 +60,7 @@ pub async fn authenticate() -> Result<GoogleTokens> {
             .ok_or_else(|| anyhow::anyhow!("No auth code in callback"))?;
 
         // Send a nice response to the browser
-        let body = "<html><body><h2>Login gennemført!</h2><p>Du kan lukke dette vindue og vende tilbage til Call Recorder.</p></body></html>";
+        let body = "<html><body><h2>Login gennemført!</h2><p>Du kan lukke dette vindue og vende tilbage til Anna.</p></body></html>";
         let response = format!(
             "HTTP/1.1 200 OK\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
             body.len(),
