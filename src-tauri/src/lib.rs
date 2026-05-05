@@ -534,12 +534,12 @@ async fn save_openai_key(key: String, state: State<'_, AppState>) -> Result<(), 
 // ─── App Setup ───
 
 fn setup_tray(app: &AppHandle) -> tauri::Result<()> {
-    let start = MenuItem::with_id(app, "start", "Start optagelse", true, None::<&str>)?;
-    let stop = MenuItem::with_id(app, "stop", "Stop optagelse", true, None::<&str>)?;
-    let open = MenuItem::with_id(app, "open", "Åbn optagelser", true, None::<&str>)?;
+    // let start = MenuItem::with_id(app, "start", "Start optagelse", true, None::<&str>)?;
+    // let stop = MenuItem::with_id(app, "stop", "Stop optagelse", true, None::<&str>)?;
+    // let open = MenuItem::with_id(app, "open", "Åbn optagelser", true, None::<&str>)?;
     let quit = MenuItem::with_id(app, "quit", "Afslut", true, None::<&str>)?;
 
-    let menu = Menu::with_items(app, &[&start, &stop, &open, &quit])?;
+    let menu = Menu::with_items(app, &[&quit])?;
 
     TrayIconBuilder::with_id("main")
         .icon(app.default_window_icon().unwrap().clone())
