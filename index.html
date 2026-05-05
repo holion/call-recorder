@@ -26,6 +26,22 @@
         </div>
       </div>
 
+      <!-- Microphone permissions overlay -->
+      <div id="microphone-overlay" class="overlay hidden">
+        <div class="overlay-content">
+          <h2>Mikrofon-adgang mangler</h2>
+          <p>Anna har brug for adgang til <strong>mikrofonen</strong> for at kunne høre, hvad du siger.</p>
+          <p class="settings-hint">Systemindstillinger er åbnet. Tillad Anna under <em>Sikkerhed &amp; Anonymitet → Mikrofon</em>.</p>
+          <div id="microphone-granted-msg" class="hidden" style="color: #34c759; margin-bottom: 12px;">
+            ✓ Mikrofon-adgang givet.
+          </div>
+          <div class="overlay-actions">
+            <button id="microphone-restart-btn" class="btn btn-primary hidden">Genstart Anna</button>
+            <button id="microphone-settings-btn" class="btn btn-secondary">Åbn Systemindstillinger igen</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Auth overlay -->
       <div id="auth-overlay" class="overlay">
         <div class="overlay-content">

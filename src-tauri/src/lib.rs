@@ -27,8 +27,24 @@ extern "C" {
 }
 
 #[cfg(target_os = "macos")]
+extern "C" {
+    fn microphone_authorization_status() -> i32;
+    fn request_microphone_access_sync() -> i32;
+}
+
+#[cfg(target_os = "macos")]
 fn is_accessibility_trusted() -> bool {
     unsafe { AXIsProcessTrusted() }
+}
+
+#[cfg(target_os = "macos")]
+pub fn is_microphone_authorized() -> bool {
+    unsafe { microphone_authorization_status() == 3 }
+}
+
+#[cfg(target_os = "macos")]
+pub fn is_microphone_denied() -> bool {
+    unsafe { microphone_authorization_status() == 2 }
 }
 
 // ─── Tauri Commands ───
@@ -561,6 +577,41 @@ fn open_accessibility_settings() {
 }
 
 #[tauri::command]
+fn check_microphone_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    return is_microphone_authorized();
+    #[cfg(not(target_os = "macos"))]
+    return true;
+}
+
+#[tauri::command]
+async fn request_microphone_permission() -> bool {
+    #[cfg(target_os = "macos")]
+    {
+        tokio::task::spawn_blocking(|| unsafe { request_microphone_access_sync() == 1 })
+            .await
+            .unwrap_or(false)
+    }
+    #[cfg(not(target_os = "macos"))]
+    true
+}
+
+#[tauri::command]
+fn open_microphone_settings() {
+    let _ = std::process::Command::new("open")
+        .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        .spawn();
+}
+
+#[tauri::command]
+fn show_main_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.show();
+        let _ = window.set_focus();
+    }
+}
+
+#[tauri::command]
 fn restart_app(app: AppHandle) {
     // app.restart() uses exec() which macOS doesn't treat as a fresh user launch,
     // causing CGEventTap to fail even after accessibility permission is granted.
@@ -691,6 +742,10 @@ pub fn run() {
             insert_anna_text,
             check_accessibility_permission,
             open_accessibility_settings,
+            check_microphone_permission,
+            request_microphone_permission,
+            open_microphone_settings,
+            show_main_window,
             restart_app,
         ])
         .run(tauri::generate_context!())

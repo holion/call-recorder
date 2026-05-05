@@ -636,14 +636,34 @@ const permissionsSettingsBtn = document.getElementById("permissions-settings-btn
 
 let permissionPollInterval: number | null = null;
 
+async function onBothPermissionsGranted() {
+  permissionsGrantedMsg.classList.remove("hidden");
+  permissionsRestartBtn.classList.remove("hidden");
+  permissionsSettingsBtn.classList.add("hidden");
+}
+
+async function checkMicrophoneThenRestart() {
+  // Trigger native dialog if not yet determined; returns true if authorized.
+  const micGranted: boolean = await invoke("request_microphone_permission");
+  if (micGranted) {
+    onBothPermissionsGranted();
+  } else {
+    // Mic denied — transition to microphone overlay
+    permissionsOverlay.classList.add("hidden");
+    microphoneOverlay.classList.remove("hidden");
+    invoke("open_microphone_settings");
+    startMicrophonePolling(true);
+  }
+}
+
 function startPermissionPolling() {
   permissionPollInterval = window.setInterval(async () => {
     const granted: boolean = await invoke("check_accessibility_permission");
     if (granted) {
       clearInterval(permissionPollInterval!);
-      permissionsGrantedMsg.classList.remove("hidden");
-      permissionsRestartBtn.classList.remove("hidden");
       permissionsSettingsBtn.classList.add("hidden");
+      // Check microphone before showing restart
+      await checkMicrophoneThenRestart();
     }
   }, 2000);
 }
@@ -660,6 +680,50 @@ function setupPermissionsListeners() {
   });
 
   permissionsRestartBtn.addEventListener("click", () => {
+    invoke("restart_app");
+  });
+}
+
+// ─── Microphone Permissions ───
+
+const microphoneOverlay = document.getElementById("microphone-overlay")!;
+const microphoneGrantedMsg = document.getElementById("microphone-granted-msg")!;
+const microphoneRestartBtn = document.getElementById("microphone-restart-btn") as HTMLButtonElement;
+const microphoneSettingsBtn = document.getElementById("microphone-settings-btn") as HTMLButtonElement;
+
+let microphonePollInterval: number | null = null;
+
+// forRestart=true: after accessibility flow, need restart when mic is granted.
+// forRestart=false: mid-dictation denial, mic takes effect immediately.
+function startMicrophonePolling(forRestart = false) {
+  microphonePollInterval = window.setInterval(async () => {
+    const granted: boolean = await invoke("check_microphone_permission");
+    if (granted) {
+      clearInterval(microphonePollInterval!);
+      microphoneGrantedMsg.classList.remove("hidden");
+      microphoneSettingsBtn.classList.add("hidden");
+      if (forRestart) {
+        microphoneRestartBtn.classList.remove("hidden");
+      } else {
+        // Permission takes effect immediately — just close the overlay.
+        setTimeout(() => microphoneOverlay.classList.add("hidden"), 1500);
+      }
+    }
+  }, 2000);
+}
+
+function setupMicrophoneListeners() {
+  listen("microphone-permission-missing", () => {
+    microphoneOverlay.classList.remove("hidden");
+    invoke("open_microphone_settings");
+    startMicrophonePolling(false);
+  });
+
+  microphoneSettingsBtn.addEventListener("click", () => {
+    invoke("open_microphone_settings");
+  });
+
+  microphoneRestartBtn.addEventListener("click", () => {
     invoke("restart_app");
   });
 }
@@ -701,6 +765,20 @@ window.addEventListener("beforeunload", () => cleanupSubscriptions());
 window.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
   setupPermissionsListeners();
+  setupMicrophoneListeners();
+
+  // If accessibility is already granted, still check microphone at startup.
+  // (If accessibility is missing, the event-driven flow handles mic after it's granted.)
+  const accessibilityOk: boolean = await invoke("check_accessibility_permission");
+  if (accessibilityOk) {
+    const micGranted: boolean = await invoke("request_microphone_permission");
+    if (!micGranted) {
+      await invoke("show_main_window");
+      microphoneOverlay.classList.remove("hidden");
+      invoke("open_microphone_settings");
+      startMicrophonePolling(false);
+    }
+  }
 
 
   const user = await initAuth();

@@ -3,8 +3,8 @@
 <plist version="1.0">
 <dict>
     <key>NSMicrophoneUsageDescription</key>
-    <string>Call Recorder bruger din mikrofon til at optage opkald.</string>
+    <string>Anna bruger mikrofonen til at transskribere din tale.</string>
     <key>NSSystemAudioRecordingUsageDescription</key>
-    <string>Call Recorder optager systemlyd for at fange begge sider af opkaldet.</string>
+    <string>Anna optager systemlyd for at fange begge sider af opkaldet.</string>
 </dict>
 </plist>

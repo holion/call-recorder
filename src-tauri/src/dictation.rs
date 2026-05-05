@@ -201,7 +201,18 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                             Ok(()) => mic = Some(m),
                             Err(e) => app_log!("[dictation] Mikrofon start fejl: {}", e),
                         },
-                        Err(e) => app_log!("[dictation] MicCapture fejl: {}", e),
+                        Err(e) => {
+                            app_log!("[dictation] MicCapture fejl: {}", e);
+                            if crate::is_microphone_denied() {
+                                app_log!("[dictation] Mikrofon-tilladelse nægtet — viser overlay");
+                                if let Some(window) = app.get_webview_window("main") {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                                let _ = app.emit("microphone-permission-missing", ());
+                            }
+                            crate::tray::set_icon(&app, crate::tray::TrayState::Normal);
+                        }
                     }
                 } else {
                     app_log!("[dictation] Fn op — stopper og transskriberer");
