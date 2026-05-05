@@ -712,6 +712,7 @@ window.addEventListener("DOMContentLoaded", async () => {
     const win = getCurrentWindow();
     await win.show();
     await win.setFocus();
+    invoke("open_accessibility_settings");
     startPermissionPolling();
   }
 
