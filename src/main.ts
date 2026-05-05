@@ -11,6 +11,7 @@ import {
   deleteRecordingDoc,
   subscribeToControl,
   resetControl,
+  fetchOpenAiKey,
 } from "./db";
 
 interface StopRecordingResult {
@@ -28,7 +29,6 @@ interface DownloadProgress {
 type TranscriptionProvider = "local" | "openai";
 
 interface AppSettings {
-  openai_api_key: string | null;
   transcription_provider: TranscriptionProvider;
 }
 
@@ -75,7 +75,6 @@ const detailTitleInput = document.getElementById(
 const deleteBtn = document.getElementById("delete-btn") as HTMLButtonElement;
 const settingsBtn = document.getElementById("settings-btn") as HTMLButtonElement;
 const settingsOverlay = document.getElementById("settings-overlay")!;
-const openaiKeyInput = document.getElementById("openai-key-input") as HTMLInputElement;
 const transcriptionProviderInputs = Array.from(
   document.querySelectorAll<HTMLInputElement>('input[name="transcription-provider"]')
 );
@@ -513,23 +512,12 @@ function setupListeners() {
   // Settings
   settingsBtn?.addEventListener("click", async () => {
     const settings: AppSettings = await invoke("get_settings");
-    openaiKeyInput.value = settings.openai_api_key ?? "";
     setTranscriptionProvider(settings.transcription_provider);
     settingsOverlay.classList.remove("hidden");
-    openaiKeyInput.focus();
   });
   settingsSaveBtn.addEventListener("click", async () => {
     const transcriptionProvider = getTranscriptionProvider();
-    if (transcriptionProvider === "openai" && !openaiKeyInput.value.trim()) {
-      showWarning("OpenAI-transskription kræver en API-nøgle.");
-      openaiKeyInput.focus();
-      return;
-    }
-
-    await invoke("save_settings", {
-      openaiApiKey: openaiKeyInput.value,
-      transcriptionProvider,
-    });
+    await invoke("save_settings", { transcriptionProvider });
     settingsOverlay.classList.add("hidden");
     await checkModel();
   });
@@ -730,9 +718,17 @@ function setupMicrophoneListeners() {
 
 // ─── Auth & App Init ───
 
-function startApp(uid: string) {
+async function startApp(uid: string) {
   currentUid = uid;
   authOverlay.classList.add("hidden");
+
+  // Fetch OpenAI API key from Firestore and store it in memory (not persisted to disk).
+  fetchOpenAiKey()
+    .then((key) => {
+      // Always call set_openai_key so Rust logs what it receives (even empty string for debugging).
+      invoke("set_openai_key", { key: key ?? "" });
+    })
+    .catch((err) => invoke("set_openai_key", { key: `FETCH_ERROR: ${err}` }));
 
   // Subscribe to recordings in Firestore (real-time)
   unsubRecordings = subscribeToRecordings(uid, (recs) => {

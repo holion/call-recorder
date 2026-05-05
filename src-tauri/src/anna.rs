@@ -9,7 +9,6 @@ use serde::{Deserialize, Serialize};
 use tauri::{AppHandle, Emitter, Manager};
 
 use crate::app_log;
-use crate::settings::Settings;
 use crate::state::{AnnaStateData, AppState};
 
 // ── OpenAI API types ───────────────────────────────────────────────────
@@ -604,7 +603,7 @@ fn set_anna_state(
 // ── Entry point called from dictation.rs ──────────────────────────────
 
 pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>, data_dir: &Path) {
-    let settings = Settings::load(data_dir);
+    let openai_key = app.state::<crate::state::AppState>().get_openai_key();
     let (target_bundle_id, app_name) = frontmost_app_info();
     let tab_title = match (app_name.as_deref(), target_bundle_id.as_deref()) {
         (Some(name), Some(bundle)) => frontmost_browser_tab_title(name, bundle),
@@ -618,7 +617,7 @@ pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>,
         _ => None,
     };
 
-    let api_key = match settings.openai_api_key.as_deref() {
+    let api_key = match openai_key.as_deref() {
         Some(k) if !k.trim().is_empty() => k.trim().to_string(),
         _ => {
             app_log!("[anna] Ingen OpenAI API-nøgle konfigureret");

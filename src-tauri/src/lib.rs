@@ -61,6 +61,7 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
     let app_clone = app.clone();
     let models_dir = state.models_dir();
     let transcription_settings = settings::Settings::load(&state.data_dir);
+    let openai_key = state.get_openai_key();
 
     // All audio init must run on a real OS thread (not tokio async) because
     // cpal and ScreenCaptureKit need an active run loop / thread context.
@@ -135,8 +136,8 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
                 }
             }
             settings::TranscriptionProvider::Openai => {
-                match transcription_settings.openai_api_key.as_deref() {
-                    Some(key) if !key.trim().is_empty() => Some(
+                match openai_key.as_deref().filter(|k| !k.trim().is_empty()) {
+                    Some(key) => Some(
                         transcription::live::LiveTranscriber::start_openai(
                             id.clone(),
                             mic_arc,
@@ -147,7 +148,7 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
                             app_clone.clone(),
                         ),
                     ),
-                    _ => {
+                    None => {
                         let _ = app_clone.emit(
                             "recording-warning",
                             "OpenAI-transskription er valgt, men der mangler en API-nøgle. Optagelsen gemmes uden live transskription.".to_string(),
@@ -247,6 +248,7 @@ async fn stop_recording(
     let rec_dir = recordings_dir.clone();
     let transcribe_id = recording_id.clone();
     let app_clone = app.clone();
+    let openai_key = state.get_openai_key();
 
     tokio::spawn(async move {
         auto_transcribe(
@@ -255,6 +257,7 @@ async fn stop_recording(
             rec_dir,
             models_dir,
             data_dir,
+            openai_key,
             app_clone,
         )
         .await;
@@ -273,6 +276,7 @@ async fn auto_transcribe(
     recordings_dir: std::path::PathBuf,
     models_dir: std::path::PathBuf,
     data_dir: std::path::PathBuf,
+    openai_key: Option<String>,
     app: AppHandle,
 ) {
     let _ = app.emit("transcription-started", &id);
@@ -326,8 +330,7 @@ async fn auto_transcribe(
             .await
         }
         settings::TranscriptionProvider::Openai => {
-            let Some(api_key) = settings
-                .openai_api_key
+            let Some(api_key) = openai_key
                 .as_deref()
                 .map(str::trim)
                 .filter(|key| !key.is_empty())
@@ -423,6 +426,7 @@ async fn transcribe_recording(
         return Err("Whisper-model er ikke downloadet endnu".into());
     }
 
+    let openai_key = state.get_openai_key();
     tokio::spawn(async move {
         auto_transcribe(
             id,
@@ -430,6 +434,7 @@ async fn transcribe_recording(
             recordings_dir,
             models_dir,
             data_dir,
+            openai_key,
             app,
         )
         .await;
@@ -476,7 +481,6 @@ async fn get_logs() -> Result<Vec<String>, String> {
 
 #[derive(Serialize)]
 struct AppSettingsDto {
-    openai_api_key: Option<String>,
     transcription_provider: settings::TranscriptionProvider,
 }
 
@@ -484,30 +488,36 @@ struct AppSettingsDto {
 async fn get_settings(state: State<'_, AppState>) -> Result<AppSettingsDto, String> {
     let settings = settings::Settings::load(&state.data_dir);
     Ok(AppSettingsDto {
-        openai_api_key: settings.openai_api_key,
         transcription_provider: settings.transcription_provider,
     })
 }
 
 #[tauri::command]
 async fn save_settings(
-    openai_api_key: String,
     transcription_provider: settings::TranscriptionProvider,
     state: State<'_, AppState>,
 ) -> Result<(), String> {
     let mut settings = settings::Settings::load(&state.data_dir);
-    settings.openai_api_key = if openai_api_key.trim().is_empty() {
-        None
-    } else {
-        Some(openai_api_key.trim().to_string())
-    };
     settings.transcription_provider = transcription_provider;
     settings.save(&state.data_dir)
 }
 
 #[tauri::command]
 async fn get_openai_key(state: State<'_, AppState>) -> Result<Option<String>, String> {
-    Ok(settings::Settings::load(&state.data_dir).openai_api_key)
+    Ok(state.get_openai_key())
+}
+
+#[tauri::command]
+async fn set_openai_key(key: String, state: State<'_, AppState>) -> Result<(), String> {
+    let trimmed = key.trim().to_string();
+    if trimmed.starts_with("FETCH_ERROR:") || trimmed.is_empty() {
+        app_log!("[anna] OpenAI-nøgle ikke hentet: {:?}", if trimmed.is_empty() { "tom (Firestore returnerede null)" } else { &trimmed });
+    } else {
+        app_log!("[anna] OpenAI-nøgle sat ({} tegn)", trimmed.len());
+    }
+    let mut lock = state.openai_api_key.lock().map_err(|e| e.to_string())?;
+    *lock = if trimmed.is_empty() || trimmed.starts_with("FETCH_ERROR:") { None } else { Some(trimmed) };
+    Ok(())
 }
 
 #[derive(Serialize)]
@@ -546,17 +556,6 @@ fn insert_anna_text(text: String, state: State<'_, AppState>) -> Result<(), Stri
     }
 
     text_insert::insert_text(&text)
-}
-
-#[tauri::command]
-async fn save_openai_key(key: String, state: State<'_, AppState>) -> Result<(), String> {
-    let mut s = settings::Settings::load(&state.data_dir);
-    s.openai_api_key = if key.trim().is_empty() {
-        None
-    } else {
-        Some(key.trim().to_string())
-    };
-    s.save(&state.data_dir)
 }
 
 // ─── Permission commands ───
@@ -737,7 +736,7 @@ pub fn run() {
             get_settings,
             save_settings,
             get_openai_key,
-            save_openai_key,
+            set_openai_key,
             get_anna_state,
             insert_anna_text,
             check_accessibility_permission,

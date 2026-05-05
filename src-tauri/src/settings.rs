@@ -17,8 +17,6 @@ impl Default for TranscriptionProvider {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub struct Settings {
     #[serde(default)]
-    pub openai_api_key: Option<String>,
-    #[serde(default)]
     pub transcription_provider: TranscriptionProvider,
 }
 

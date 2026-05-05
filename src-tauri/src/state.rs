@@ -27,6 +27,7 @@ pub struct AppState {
     pub recording: Arc<Mutex<Option<ActiveRecording>>>,
     pub data_dir: PathBuf,
     pub anna: Mutex<Option<AnnaStateData>>,
+    pub openai_api_key: Mutex<Option<String>>,
 }
 
 impl AppState {
@@ -35,7 +36,12 @@ impl AppState {
             recording: Arc::new(Mutex::new(None)),
             data_dir,
             anna: Mutex::new(None),
+            openai_api_key: Mutex::new(None),
         }
+    }
+
+    pub fn get_openai_key(&self) -> Option<String> {
+        self.openai_api_key.lock().ok()?.clone()
     }
 
     pub fn recordings_dir(&self) -> PathBuf {

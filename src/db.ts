@@ -2,6 +2,7 @@ import { db } from "./firebase";
 import {
   collection,
   doc,
+  getDoc,
   setDoc,
   deleteDoc,
   onSnapshot,
@@ -91,4 +92,9 @@ export function subscribeToControl(
 export async function resetControl(uid: string): Promise<void> {
   const ref = doc(db, "users", uid, "status", "control");
   await setDoc(ref, { action: "idle" });
+}
+
+export async function fetchOpenAiKey(): Promise<string | null> {
+  const snap = await getDoc(doc(db, "settings", "openai"));
+  return (snap.data()?.apiKey as string) ?? null;
 }
