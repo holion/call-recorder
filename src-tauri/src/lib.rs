@@ -562,7 +562,20 @@ fn open_accessibility_settings() {
 
 #[tauri::command]
 fn restart_app(app: AppHandle) {
-    app.restart();
+    // app.restart() uses exec() which macOS doesn't treat as a fresh user launch,
+    // causing CGEventTap to fail even after accessibility permission is granted.
+    // Spawning via 'open -n' forces a proper user-initiated launch.
+    if let Ok(exe) = std::env::current_exe() {
+        let mut bundle = exe.clone();
+        bundle.pop(); // Anna (binary)
+        bundle.pop(); // MacOS
+        bundle.pop(); // Contents
+        let _ = std::process::Command::new("open").arg("-n").arg(&bundle).spawn();
+        std::thread::sleep(std::time::Duration::from_millis(500));
+        app.exit(0);
+    } else {
+        app.restart();
+    }
 }
 
 // ─── App Setup ───
