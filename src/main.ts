@@ -649,12 +649,8 @@ function startPermissionPolling() {
 }
 
 function setupPermissionsListeners() {
-  listen("permissions-needed", async () => {
+  listen("permissions-needed", () => {
     permissionsOverlay.classList.remove("hidden");
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const win = getCurrentWindow();
-    await win.show();
-    await win.setFocus();
     startPermissionPolling();
   });
 
@@ -708,11 +704,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   const hasAccessibility: boolean = await invoke("check_accessibility_permission");
   if (!hasAccessibility) {
     permissionsOverlay.classList.remove("hidden");
-    const { getCurrentWindow } = await import("@tauri-apps/api/window");
-    const win = getCurrentWindow();
-    await win.show();
-    await win.setFocus();
-    invoke("open_accessibility_settings");
     startPermissionPolling();
   }
 
