@@ -58,6 +58,17 @@ src-tauri/src/              # Backend (Rust)
   logging.rs                # Log panel
 ```
 
+## Nyttige kommandoer
+
+### Nulstil login
+
+Firebase gemmer auth-token i webviewets lokale storage. Slet dem og genstart appen for at blive bedt om at logge ind igen:
+
+```bash
+rm -rf ~/Library/WebKit/dk.holion.call-recorder
+rm -rf ~/Library/Application\ Support/dk.holion.call-recorder/WebKit
+```
+
 ## Build
 
 ```bash
