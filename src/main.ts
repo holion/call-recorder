@@ -649,8 +649,9 @@ function startPermissionPolling() {
 }
 
 function setupPermissionsListeners() {
-  listen("permissions-needed", () => {
+  listen("accessibility-permission-missing", () => {
     permissionsOverlay.classList.remove("hidden");
+    invoke("open_accessibility_settings");
     startPermissionPolling();
   });
 
@@ -701,11 +702,6 @@ window.addEventListener("DOMContentLoaded", async () => {
   setupListeners();
   setupPermissionsListeners();
 
-  const hasAccessibility: boolean = await invoke("check_accessibility_permission");
-  if (!hasAccessibility) {
-    permissionsOverlay.classList.remove("hidden");
-    startPermissionPolling();
-  }
 
   const user = await initAuth();
   if (user) {

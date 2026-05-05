@@ -16,7 +16,7 @@ use crate::{
     audio::mixer::resample,
     text_insert,
 };
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
 
 // ── FFI types ──────────────────────────────────────────────────────────
 
@@ -130,9 +130,10 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
     FN_TX.set(tx).ok();
 
     // Thread 1: CGEventTap running on its own CFRunLoop.
+    let app_for_tap = app.clone();
     std::thread::Builder::new()
         .name("dictation-event-tap".into())
-        .spawn(|| unsafe {
+        .spawn(move || unsafe {
             let mask = 1u64 << KCG_EVENT_FLAGS_CHANGED;
             let tap = CGEventTapCreate(
                 KCG_HID_EVENT_TAP,
@@ -145,6 +146,13 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
 
             if tap.is_null() {
                 app_log!("[dictation] CGEventTapCreate fejlede — mangler Accessibility-tilladelse");
+                // Give the webview time to load before showing window and emitting
+                std::thread::sleep(std::time::Duration::from_secs(2));
+                if let Some(window) = app_for_tap.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                let _ = app_for_tap.emit("accessibility-permission-missing", ());
                 return;
             }
 

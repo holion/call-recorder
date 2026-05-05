@@ -636,14 +636,6 @@ pub fn run() {
 
                 dictation::start(app.handle().clone(), data_dir2);
 
-                if !is_accessibility_trusted() {
-                    app_log!("[permissions] Accessibility-tilladelse mangler");
-                    if let Some(window) = app.get_webview_window("main") {
-                        let _ = window.show();
-                        let _ = window.set_focus();
-                    }
-                    open_accessibility_settings();
-                }
             }
 
             let handle = app.handle().clone();
