@@ -66,7 +66,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_WITH_PUBLIC_KEY",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEFBOTg2RkM0RDc4MDlFODYKUldTR25vRFh4RytZcW96YWtzZnNiSXlZSVB3WFZNNkVrV1Q5d3M4dTBXNHBjWGgyMnROMjZsbEUK",
       "endpoints": [
         "https://github.com/holion/call-recorder/releases/latest/download/latest.json"
       ]
