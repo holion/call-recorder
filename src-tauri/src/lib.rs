@@ -13,6 +13,7 @@ mod tray;
 
 use serde::Serialize;
 use state::AppState;
+use tauri_plugin_updater::UpdaterExt;
 use tauri::{
     menu::{Menu, MenuItem},
     tray::TrayIconBuilder,
@@ -576,6 +577,7 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_fs::init())
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
             let data_dir = app
                 .path()
@@ -601,6 +603,25 @@ pub fn run() {
 
                 dictation::start(app.handle().clone(), data_dir2);
             }
+
+            let handle = app.handle().clone();
+            tauri::async_runtime::spawn(async move {
+                if let Ok(updater) = handle.updater() {
+                    match updater.check().await {
+                        Ok(Some(update)) => {
+                            app_log!("[updater] Opdatering tilgængelig: {}", update.version);
+                            if let Err(e) = update.download_and_install(|_, _| {}, || {}).await {
+                                app_log!("[updater] Installation fejlede: {}", e);
+                            } else {
+                                app_log!("[updater] Opdatering installeret — kræver genstart");
+                                let _ = handle.emit("update-installed", ());
+                            }
+                        }
+                        Ok(None) => app_log!("[updater] Appen er opdateret"),
+                        Err(e) => app_log!("[updater] Opdateringstjek fejlede: {}", e),
+                    }
+                }
+            });
 
             Ok(())
         })
