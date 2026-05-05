@@ -207,6 +207,7 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                         drop(m);
 
                         if raw.is_empty() {
+                            crate::tray::set_icon(&app, crate::tray::TrayState::Normal);
                             continue;
                         }
 
@@ -305,6 +306,8 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                                 }
                             }
                         });
+                    } else {
+                        crate::tray::set_icon(&app, crate::tray::TrayState::Normal);
                     }
                 }
             }
