@@ -44,6 +44,8 @@ let currentRecordingId: string | null = null;
 let liveTranscriptionText = "";
 let unsubRecordings: (() => void) | null = null;
 let unsubControl: (() => void) | null = null;
+let permissionListenersInitialized = false;
+let authWindowShownForLogin = false;
 
 function cleanupSubscriptions() {
   if (unsubRecordings) { unsubRecordings(); unsubRecordings = null; }
@@ -666,6 +668,7 @@ function startPermissionPolling() {
 function setupPermissionsListeners() {
   listen("accessibility-permission-missing", () => {
     permissionsOverlay.classList.remove("hidden");
+    invoke("show_main_window");
     invoke("open_accessibility_settings");
     startPermissionPolling();
   });
@@ -710,6 +713,7 @@ function startMicrophonePolling(forRestart = false) {
 function setupMicrophoneListeners() {
   listen("microphone-permission-missing", () => {
     microphoneOverlay.classList.remove("hidden");
+    invoke("show_main_window");
     invoke("open_microphone_settings");
     startMicrophonePolling(false);
   });
@@ -724,6 +728,35 @@ function setupMicrophoneListeners() {
 }
 
 // ─── Auth & App Init ───
+
+function ensurePermissionListeners() {
+  if (permissionListenersInitialized) return;
+  setupPermissionsListeners();
+  setupMicrophoneListeners();
+  permissionListenersInitialized = true;
+}
+
+async function ensurePostLoginPermissions() {
+  const accessibilityOk: boolean = await invoke("check_accessibility_permission");
+  if (!accessibilityOk) {
+    await invoke("show_main_window");
+    permissionsOverlay.classList.remove("hidden");
+    invoke("open_accessibility_settings");
+    startPermissionPolling();
+    return true;
+  }
+
+  const micGranted: boolean = await invoke("request_microphone_permission");
+  if (!micGranted) {
+    await invoke("show_main_window");
+    microphoneOverlay.classList.remove("hidden");
+    invoke("open_microphone_settings");
+    startMicrophonePolling(false);
+    return true;
+  }
+
+  return false;
+}
 
 async function startApp(uid: string) {
   if (currentUid === uid) return;
@@ -761,6 +794,12 @@ async function startApp(uid: string) {
     }
   });
 
+  ensurePermissionListeners();
+  const needsPermissionFlow = await ensurePostLoginPermissions();
+  if (authWindowShownForLogin && !needsPermissionFlow) {
+    await invoke("hide_main_window");
+    authWindowShownForLogin = false;
+  }
   checkModel();
 }
 
@@ -790,29 +829,18 @@ window.addEventListener("DOMContentLoaded", async () => {
 
   try {
     setupListeners();
-    setupPermissionsListeners();
-    setupMicrophoneListeners();
-
-    // If accessibility is already granted, still check microphone at startup.
-    // (If accessibility is missing, the event-driven flow handles mic after it's granted.)
-    const accessibilityOk: boolean = await invoke("check_accessibility_permission");
-    if (accessibilityOk) {
-      const micGranted: boolean = await invoke("request_microphone_permission");
-      if (!micGranted) {
-        await invoke("show_main_window");
-        microphoneOverlay.classList.remove("hidden");
-        invoke("open_microphone_settings");
-        startMicrophonePolling(false);
-      }
-    }
 
     const user = await initAuth();
     if (user) {
       startApp(user.uid);
     } else {
+      await invoke("show_main_window");
+      authWindowShownForLogin = true;
       authOverlay.classList.remove("hidden");
     }
   } catch (e: any) {
+    await invoke("show_main_window");
+    authWindowShownForLogin = true;
     authError.textContent = `Opstartsfejl: ${e?.message ?? e}`;
     authError.classList.remove("hidden");
     authOverlay.classList.remove("hidden");

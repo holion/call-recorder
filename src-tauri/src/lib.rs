@@ -611,6 +611,13 @@ fn show_main_window(app: AppHandle) {
 }
 
 #[tauri::command]
+fn hide_main_window(app: AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        let _ = window.hide();
+    }
+}
+
+#[tauri::command]
 fn restart_app(app: AppHandle) {
     // app.restart() uses exec() which macOS doesn't treat as a fresh user launch,
     // causing CGEventTap to fail even after accessibility permission is granted.
@@ -745,6 +752,7 @@ pub fn run() {
             request_microphone_permission,
             open_microphone_settings,
             show_main_window,
+            hide_main_window,
             restart_app,
         ])
         .run(tauri::generate_context!())
