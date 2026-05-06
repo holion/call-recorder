@@ -719,6 +719,9 @@ function setupMicrophoneListeners() {
 // ─── Auth & App Init ───
 
 async function startApp(uid: string) {
+  if (currentUid === uid) return;
+  if (currentUid) cleanupSubscriptions();
+
   currentUid = uid;
   authOverlay.classList.add("hidden");
 
@@ -758,7 +761,26 @@ async function startApp(uid: string) {
 
 window.addEventListener("beforeunload", () => cleanupSubscriptions());
 
+async function handleLoginClick() {
+  if (loginBtn.disabled || currentUid) return;
+
+  loginBtn.disabled = true;
+  loginBtn.textContent = "Logger ind...";
+  authError.classList.add("hidden");
+  try {
+    const user = await signIn();
+    startApp(user.uid);
+  } catch (e: any) {
+    authError.textContent = `Login fejlede: ${e.message || e}`;
+    authError.classList.remove("hidden");
+    loginBtn.disabled = false;
+    loginBtn.textContent = "Log ind med Google";
+  }
+}
+
 window.addEventListener("DOMContentLoaded", async () => {
+  loginBtn.addEventListener("click", handleLoginClick);
+
   try {
     setupListeners();
     setupPermissionsListeners();
@@ -788,19 +810,4 @@ window.addEventListener("DOMContentLoaded", async () => {
     authError.classList.remove("hidden");
     authOverlay.classList.remove("hidden");
   }
-
-  loginBtn.addEventListener("click", async () => {
-    loginBtn.disabled = true;
-    loginBtn.textContent = "Logger ind...";
-    authError.classList.add("hidden");
-    try {
-      const user = await signIn();
-      startApp(user.uid);
-    } catch (e: any) {
-      authError.textContent = `Login fejlede: ${e.message || e}`;
-      authError.classList.remove("hidden");
-      loginBtn.disabled = false;
-      loginBtn.textContent = "Log ind med Google";
-    }
-  });
 });
