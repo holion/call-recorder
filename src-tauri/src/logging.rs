@@ -6,6 +6,7 @@ use std::time::Duration;
 
 static LOG_BUFFER: Mutex<Vec<String>> = Mutex::new(Vec::new());
 static REMOTE_LOGGER: OnceLock<Option<RemoteLogger>> = OnceLock::new();
+static INSTALLATION_ID: OnceLock<String> = OnceLock::new();
 
 const REMOTE_BATCH_SIZE: usize = 100;
 const REMOTE_FLUSH_INTERVAL: Duration = Duration::from_secs(5);
@@ -31,6 +32,8 @@ struct HumioBatch<'a> {
 struct HumioTags<'a> {
     system: &'a str,
     environment: &'a str,
+    #[serde(rename = "installationId")]
+    installation_id: &'a str,
 }
 
 #[derive(Serialize)]
@@ -44,11 +47,21 @@ struct HumioEvent {
 struct HumioAttributes {
     app: &'static str,
     source: &'static str,
+    #[serde(rename = "installationId")]
+    installation_id: String,
     message: String,
 }
 
-pub fn init_remote_logging() {
+pub fn init_remote_logging(installation_id: String) {
+    let _ = INSTALLATION_ID.set(installation_id);
     let _ = REMOTE_LOGGER.get_or_init(build_remote_logger);
+}
+
+fn installation_id() -> &'static str {
+    INSTALLATION_ID
+        .get()
+        .map(String::as_str)
+        .unwrap_or("unknown")
 }
 
 fn remote_logger() -> Option<&'static RemoteLogger> {
@@ -130,6 +143,7 @@ fn send_batch(
             attributes: HumioAttributes {
                 app: "anna",
                 source: "desktop-app",
+                installation_id: installation_id().to_string(),
                 message: event.message.clone(),
             },
         })
@@ -139,6 +153,7 @@ fn send_batch(
         tags: HumioTags {
             system: "anna",
             environment,
+            installation_id: installation_id(),
         },
         events: &events,
     }];

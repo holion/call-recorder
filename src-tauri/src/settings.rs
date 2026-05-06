@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::path::Path;
+use uuid::Uuid;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -18,6 +19,8 @@ impl Default for TranscriptionProvider {
 pub struct Settings {
     #[serde(default)]
     pub transcription_provider: TranscriptionProvider,
+    #[serde(default)]
+    pub installation_id: String,
 }
 
 impl Settings {
@@ -27,6 +30,15 @@ impl Settings {
             .ok()
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_default()
+    }
+
+    pub fn ensure_installation_id(&mut self) -> bool {
+        if !self.installation_id.trim().is_empty() {
+            return false;
+        }
+
+        self.installation_id = Uuid::new_v4().to_string();
+        true
     }
 
     pub fn save(&self, data_dir: &Path) -> Result<(), String> {

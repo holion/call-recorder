@@ -701,9 +701,18 @@ pub fn run() {
                 .expect("Kunne ikke finde app data mappe");
             std::fs::create_dir_all(&data_dir)?;
 
+            let mut startup_settings = settings::Settings::load(&data_dir);
+            if startup_settings.ensure_installation_id() {
+                startup_settings.save(&data_dir)?;
+            }
+
             let state = AppState::new(data_dir);
             app.manage(state);
-            logging::init_remote_logging();
+            logging::init_remote_logging(startup_settings.installation_id.clone());
+            app_log!(
+                "[startup] installation_id={}",
+                startup_settings.installation_id
+            );
 
             // Hide dock icon — must happen before any window is shown
             #[cfg(target_os = "macos")]
