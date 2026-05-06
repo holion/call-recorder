@@ -17,13 +17,19 @@ jobs:
           node-version: 22
           cache: 'npm'
 
+      - name: Mark release start
+        id: release_start
+        run: echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
+
       - name: Validate tag matches app version
         run: |
+          start_ts=$(date +%s)
           TAG_VERSION="${GITHUB_REF_NAME#v}"
           PACKAGE_VERSION=$(node -p "require('./package.json').version")
           TAURI_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('./src-tauri/tauri.conf.json', 'utf8')).version")
           [ "$TAG_VERSION" = "$PACKAGE_VERSION" ] || { echo "::error title=Version mismatch::Tag version $TAG_VERSION does not match package.json version $PACKAGE_VERSION"; exit 1; }
           [ "$TAG_VERSION" = "$TAURI_VERSION" ] || { echo "::error title=Version mismatch::Tag version $TAG_VERSION does not match tauri.conf.json version $TAURI_VERSION"; exit 1; }
+          echo "Validate tag matches app version: $(( $(date +%s) - start_ts ))s" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -36,7 +42,11 @@ jobs:
           workspaces: "src-tauri -> target"
 
       - name: Install frontend deps
-        run: npm ci
+        run: |
+          start_ts=$(date +%s)
+          npm ci
+          echo "Install frontend deps: $(( $(date +%s) - start_ts ))s" >> "$GITHUB_STEP_SUMMARY"
+        shell: bash
 
       - name: Validate release environment
         env:
@@ -49,6 +59,7 @@ jobs:
           GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
           GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
         run: |
+          start_ts=$(date +%s)
           missing=0
           for name in \
             VITE_FIREBASE_API_KEY \
@@ -65,13 +76,16 @@ jobs:
               missing=1
             fi
           done
+          echo "Validate release environment: $(( $(date +%s) - start_ts ))s" >> "$GITHUB_STEP_SUMMARY"
           exit "$missing"
+        shell: bash
 
       - name: Import Apple certificate
         env:
           APPLE_CERTIFICATE: ${{ secrets.APPLE_CERTIFICATE }}
           APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
         run: |
+          start_ts=$(date +%s)
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           KEYCHAIN_PASS=$(openssl rand -base64 32)
           security create-keychain -p "$KEYCHAIN_PASS" $KEYCHAIN_PATH
@@ -82,8 +96,14 @@ jobs:
             -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           security find-identity -v -p codesigning $KEYCHAIN_PATH
+          echo "Import Apple certificate: $(( $(date +%s) - start_ts ))s" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Mark tauri build start
+        id: tauri_start
+        run: echo "ts=$(date +%s)" >> "$GITHUB_OUTPUT"
 
       - name: Build and release
+        id: tauri_release
         uses: tauri-apps/tauri-action@v0
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -110,3 +130,14 @@ jobs:
           releaseDraft: false
           prerelease: false
           args: --target universal-apple-darwin
+
+      - name: Summarize release timings
+        if: always()
+        run: |
+          release_start=${{ steps.release_start.outputs.ts }}
+          tauri_start=${{ steps.tauri_start.outputs.ts }}
+          now=$(date +%s)
+          echo "## Release timings" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Pre-build setup (checkout, validation, toolchain, cache, npm, cert): $(( tauri_start - release_start ))s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Tauri build and release: $(( now - tauri_start ))s" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Total workflow runtime so far: $(( now - release_start ))s" >> "$GITHUB_STEP_SUMMARY"
