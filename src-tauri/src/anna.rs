@@ -602,7 +602,7 @@ fn set_anna_state(
 
 // ── Entry point called from dictation.rs ──────────────────────────────
 
-pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>, data_dir: &Path) {
+pub fn handle_query(app: &AppHandle, command: &str, screenshot: Option<Vec<u8>>, _data_dir: &Path) {
     let openai_key = app.state::<crate::state::AppState>().get_openai_key();
     let (target_bundle_id, app_name) = frontmost_app_info();
     let tab_title = match (app_name.as_deref(), target_bundle_id.as_deref()) {
