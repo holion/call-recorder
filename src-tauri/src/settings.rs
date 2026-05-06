@@ -10,7 +10,7 @@ pub enum TranscriptionProvider {
 
 impl Default for TranscriptionProvider {
     fn default() -> Self {
-        Self::Local
+        Self::Openai
     }
 }
 
