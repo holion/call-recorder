@@ -703,6 +703,7 @@ pub fn run() {
 
             let state = AppState::new(data_dir);
             app.manage(state);
+            logging::init_remote_logging();
 
             // Hide dock icon — must happen before any window is shown
             #[cfg(target_os = "macos")]

@@ -88,3 +88,19 @@ npm run release -- major
 ```
 
 Scriptet laver et commit som `Release vX.Y.Z` og et tag `vX.Y.Z`. Push derefter commit og tag for at starte GitHub Actions-releasen.
+
+## Humio Logging
+
+Appen kan valgfrit sende backend-logs til Humio / Falcon LogScale via structured ingest-endpointet.
+
+Sæt disse compile-time variabler:
+
+```bash
+HUMIO_INGEST_URL=https://<your-host>/api/v1/ingest/humio-structured
+HUMIO_INGEST_TOKEN=<ingest-token>
+HUMIO_ENV=dev
+```
+
+Logs sendes altid med tags `system=anna` og `environment=<dev|prod>`. Lokale builds falder tilbage til `dev`, og GitHub Actions release-builds sætter `prod`.
+
+Hvis de er sat under build, bliver logs batch'et og sendt i baggrunden. Hvis de mangler, bruges kun den lokale log-buffer i appen.
