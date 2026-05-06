@@ -640,8 +640,10 @@ async function onBothPermissionsGranted() {
 }
 
 async function checkMicrophoneThenRestart() {
-  // Trigger native dialog if not yet determined; returns true if authorized.
-  const micGranted: boolean = await invoke("request_microphone_permission");
+  const micStatus: number = await invoke("get_microphone_permission_status");
+  const micGranted =
+    micStatus === 3 ||
+    (micStatus === 0 && (await invoke("request_microphone_permission")));
   if (micGranted) {
     onBothPermissionsGranted();
   } else {
@@ -746,12 +748,15 @@ async function ensurePostLoginPermissions() {
     return true;
   }
 
-  const micGranted: boolean = await invoke("request_microphone_permission");
+  const micStatus: number = await invoke("get_microphone_permission_status");
+  const micGranted =
+    micStatus === 3 ||
+    (micStatus === 0 && (await invoke("request_microphone_permission")));
   if (!micGranted) {
     await invoke("show_main_window");
     microphoneOverlay.classList.remove("hidden");
     invoke("open_microphone_settings");
-    startMicrophonePolling(false);
+    startMicrophonePolling(true);
     return true;
   }
 

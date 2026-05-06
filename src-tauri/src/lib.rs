@@ -43,6 +43,11 @@ pub fn is_microphone_authorized() -> bool {
 }
 
 #[cfg(target_os = "macos")]
+pub fn microphone_permission_status() -> i32 {
+    unsafe { microphone_authorization_status() }
+}
+
+#[cfg(target_os = "macos")]
 pub fn is_microphone_denied() -> bool {
     unsafe { microphone_authorization_status() == 2 }
 }
@@ -584,6 +589,14 @@ fn check_microphone_permission() -> bool {
 }
 
 #[tauri::command]
+fn get_microphone_permission_status() -> i32 {
+    #[cfg(target_os = "macos")]
+    return microphone_permission_status();
+    #[cfg(not(target_os = "macos"))]
+    return 3;
+}
+
+#[tauri::command]
 async fn request_microphone_permission() -> bool {
     #[cfg(target_os = "macos")]
     {
@@ -749,6 +762,7 @@ pub fn run() {
             check_accessibility_permission,
             open_accessibility_settings,
             check_microphone_permission,
+            get_microphone_permission_status,
             request_microphone_permission,
             open_microphone_settings,
             show_main_window,
