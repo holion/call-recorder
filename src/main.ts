@@ -32,6 +32,8 @@ interface AppSettings {
   transcription_provider: TranscriptionProvider;
 }
 
+const REQUIRE_LOCAL_MODEL_DOWNLOAD = false;
+
 let currentUid: string | null = null;
 let isRecording = false;
 let recordingStartTime: number | null = null;
@@ -479,6 +481,11 @@ async function deleteSelected() {
 // ─── Model Download ───
 
 async function checkModel() {
+  if (!REQUIRE_LOCAL_MODEL_DOWNLOAD) {
+    modelOverlay.classList.add("hidden");
+    return;
+  }
+
   const settings: AppSettings = await invoke("get_settings");
   if (settings.transcription_provider === "openai") {
     modelOverlay.classList.add("hidden");
