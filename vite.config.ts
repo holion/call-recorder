@@ -12,6 +12,9 @@ export default defineConfig(async () => ({
   // 1. prevent Vite from obscuring rust errors
   clearScreen: false,
   build: {
+    // Disable the modulepreload polyfill — Tauri's WKWebView supports it natively,
+    // and the inline script it injects is blocked by CSP's script-src 'self'.
+    modulePreload: { polyfill: false },
     rollupOptions: {
       input: {
         main: resolve(__dirname, "index.html"),
