@@ -44,9 +44,10 @@ pub fn transcribe_audio(api_key: &str, audio: &[f32], speaker: &str) -> Result<V
         return Ok(Vec::new());
     }
 
+    let skip_silence_gate = speaker == "Diktation";
     let mut all = Vec::new();
     for (chunk_index, chunk) in audio.chunks(CHUNK_SAMPLES).enumerate() {
-        if !contains_speech(chunk, speaker) {
+        if !skip_silence_gate && !contains_speech(chunk, speaker) {
             continue;
         }
 
