@@ -9,11 +9,25 @@ import {
 } from "firebase/auth";
 
 export function initAuth(): Promise<User | null> {
-  return new Promise((resolve) => {
-    const unsubscribe = onAuthStateChanged(auth, (user) => {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
       unsubscribe();
-      resolve(user);
-    });
+      reject(new Error("Firebase Auth timeout — onAuthStateChanged fandt aldrig en bruger"));
+    }, 8000);
+
+    const unsubscribe = onAuthStateChanged(
+      auth,
+      (user) => {
+        clearTimeout(timer);
+        unsubscribe();
+        resolve(user);
+      },
+      (error) => {
+        clearTimeout(timer);
+        unsubscribe();
+        reject(error);
+      }
+    );
   });
 }
 

@@ -759,28 +759,33 @@ async function startApp(uid: string) {
 window.addEventListener("beforeunload", () => cleanupSubscriptions());
 
 window.addEventListener("DOMContentLoaded", async () => {
-  setupListeners();
-  setupPermissionsListeners();
-  setupMicrophoneListeners();
+  try {
+    setupListeners();
+    setupPermissionsListeners();
+    setupMicrophoneListeners();
 
-  // If accessibility is already granted, still check microphone at startup.
-  // (If accessibility is missing, the event-driven flow handles mic after it's granted.)
-  const accessibilityOk: boolean = await invoke("check_accessibility_permission");
-  if (accessibilityOk) {
-    const micGranted: boolean = await invoke("request_microphone_permission");
-    if (!micGranted) {
-      await invoke("show_main_window");
-      microphoneOverlay.classList.remove("hidden");
-      invoke("open_microphone_settings");
-      startMicrophonePolling(false);
+    // If accessibility is already granted, still check microphone at startup.
+    // (If accessibility is missing, the event-driven flow handles mic after it's granted.)
+    const accessibilityOk: boolean = await invoke("check_accessibility_permission");
+    if (accessibilityOk) {
+      const micGranted: boolean = await invoke("request_microphone_permission");
+      if (!micGranted) {
+        await invoke("show_main_window");
+        microphoneOverlay.classList.remove("hidden");
+        invoke("open_microphone_settings");
+        startMicrophonePolling(false);
+      }
     }
-  }
 
-
-  const user = await initAuth();
-  if (user) {
-    startApp(user.uid);
-  } else {
+    const user = await initAuth();
+    if (user) {
+      startApp(user.uid);
+    } else {
+      authOverlay.classList.remove("hidden");
+    }
+  } catch (e: any) {
+    authError.textContent = `Opstartsfejl: ${e?.message ?? e}`;
+    authError.classList.remove("hidden");
     authOverlay.classList.remove("hidden");
   }
 
