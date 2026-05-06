@@ -76,3 +76,15 @@ npm run tauri build
 ```
 
 Producerer en `.dmg` / `.app` i `src-tauri/target/release/bundle/`.
+
+## Release
+
+Brug release-scriptet til at bumpe versionen, synkronisere Tauri-versionen, lave commit og oprette git-tag:
+
+```bash
+npm run release -- patch
+npm run release -- minor
+npm run release -- major
+```
+
+Scriptet laver et commit som `Release vX.Y.Z` og et tag `vX.Y.Z`. Push derefter commit og tag for at starte GitHub Actions-releasen.

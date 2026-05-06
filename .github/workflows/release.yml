@@ -17,6 +17,14 @@ jobs:
           node-version: 22
           cache: 'npm'
 
+      - name: Validate tag matches app version
+        run: |
+          TAG_VERSION="${GITHUB_REF_NAME#v}"
+          PACKAGE_VERSION=$(node -p "require('./package.json').version")
+          TAURI_VERSION=$(node -p "JSON.parse(require('fs').readFileSync('./src-tauri/tauri.conf.json', 'utf8')).version")
+          [ "$TAG_VERSION" = "$PACKAGE_VERSION" ] || { echo "::error title=Version mismatch::Tag version $TAG_VERSION does not match package.json version $PACKAGE_VERSION"; exit 1; }
+          [ "$TAG_VERSION" = "$TAURI_VERSION" ] || { echo "::error title=Version mismatch::Tag version $TAG_VERSION does not match tauri.conf.json version $TAURI_VERSION"; exit 1; }
+
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
         with:
