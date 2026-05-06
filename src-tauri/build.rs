@@ -8,8 +8,23 @@ fn main() {
         let obj = format!("{}/mic_permission.o", out_dir);
         let lib = format!("{}/libmic_permission.a", out_dir);
 
+        let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
+        let clang_arch = match target_arch.as_str() {
+            "aarch64" => "arm64",
+            "x86_64" => "x86_64",
+            other => other,
+        };
+
         let ok = std::process::Command::new("clang")
-            .args(["-fobjc-arc", "-c", "mic_permission.m", "-o", &obj])
+            .args([
+                "-fobjc-arc",
+                "-arch",
+                clang_arch,
+                "-c",
+                "mic_permission.m",
+                "-o",
+                &obj,
+            ])
             .status()
             .expect("clang not found")
             .success();
