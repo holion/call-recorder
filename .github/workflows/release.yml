@@ -137,9 +137,9 @@ jobs:
       - name: Validate signed app entitlements
         run: |
           APP_PATH="src-tauri/target/aarch64-apple-darwin/release/bundle/macos/Anna.app"
-          ENTITLEMENTS_PATH="$RUNNER_TEMP/Anna.entitlements.plist"
-          codesign -d --entitlements :- "$APP_PATH" > "$ENTITLEMENTS_PATH"
-          plutil -extract com.apple.security.device.audio-input raw -o - "$ENTITLEMENTS_PATH" | grep -qx "1"
+          ENTITLEMENTS_PATH="$RUNNER_TEMP/Anna.entitlements.txt"
+          codesign -d --entitlements - "$APP_PATH" 2>&1 | tee "$ENTITLEMENTS_PATH"
+          grep -A2 -F "com.apple.security.device.audio-input" "$ENTITLEMENTS_PATH" | grep -F "[Bool] true"
           echo "Signed app has com.apple.security.device.audio-input entitlement" >> "$GITHUB_STEP_SUMMARY"
         shell: bash
 
