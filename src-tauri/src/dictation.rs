@@ -195,17 +195,21 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                     let _ = app.emit("dictation-recording", true);
                     crate::tray::set_icon(&app, crate::tray::TrayState::Recording);
 
-                    let mic_status = crate::microphone_permission_status();
-                    let mic_granted = match mic_status {
+                    let status_before = crate::microphone_permission_status();
+                    let mic_granted = match status_before {
                         3 => true,
                         0 => crate::request_microphone_permission_blocking(),
                         _ => false,
                     };
+                    let status_after = crate::microphone_permission_status();
 
                     if !mic_granted {
                         app_log!(
-                            "[dictation] Mikrofon ikke tilgængelig (status={}) — viser overlay",
-                            mic_status
+                            "[dictation] Mikrofon ikke tilgængelig (før={} {}, efter={} {}) — viser overlay",
+                            status_before,
+                            crate::microphone_permission_status_label(status_before),
+                            status_after,
+                            crate::microphone_permission_status_label(status_after)
                         );
                         if let Some(window) = app.get_webview_window("main") {
                             let _ = window.show();

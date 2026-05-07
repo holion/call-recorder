@@ -1,3 +1,4 @@
+#import <AppKit/AppKit.h>
 #import <AVFoundation/AVFoundation.h>
 #import <dispatch/dispatch.h>
 
@@ -12,10 +13,13 @@ int microphone_authorization_status(void) {
 int request_microphone_access_sync(void) {
     dispatch_semaphore_t sem = dispatch_semaphore_create(0);
     __block BOOL granted = NO;
-    [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL g) {
-        granted = g;
-        dispatch_semaphore_signal(sem);
-    }];
+    dispatch_async(dispatch_get_main_queue(), ^{
+        [NSApp activateIgnoringOtherApps:YES];
+        [AVCaptureDevice requestAccessForMediaType:AVMediaTypeAudio completionHandler:^(BOOL g) {
+            granted = g;
+            dispatch_semaphore_signal(sem);
+        }];
+    });
     dispatch_semaphore_wait(sem, DISPATCH_TIME_FOREVER);
     return granted ? 1 : 0;
 }

@@ -616,9 +616,23 @@ fn get_microphone_permission_status() -> i32 {
 async fn request_microphone_permission() -> bool {
     #[cfg(target_os = "macos")]
     {
-        tokio::task::spawn_blocking(request_microphone_permission_blocking)
+        let before = microphone_permission_status();
+        app_log!(
+            "[microphone] Request starter: status={} ({})",
+            before,
+            microphone_permission_status_label(before)
+        );
+        let granted = tokio::task::spawn_blocking(request_microphone_permission_blocking)
             .await
-            .unwrap_or(false)
+            .unwrap_or(false);
+        let after = microphone_permission_status();
+        app_log!(
+            "[microphone] Request færdig: granted={} status={} ({})",
+            granted,
+            after,
+            microphone_permission_status_label(after)
+        );
+        granted
     }
     #[cfg(not(target_os = "macos"))]
     true
