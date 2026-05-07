@@ -39,7 +39,9 @@ fn main() {
 
         println!("cargo:rustc-link-lib=static=mic_permission");
         println!("cargo:rustc-link-search=native={}", out_dir);
+        println!("cargo:rustc-link-lib=framework=AppKit");
         println!("cargo:rustc-link-lib=framework=AVFoundation");
+        println!("cargo:rustc-link-lib=framework=Security");
         println!("cargo:rerun-if-changed=mic_permission.m");
     }
     // Load .env from project root so env!() macros can read secrets at compile time

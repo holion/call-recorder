@@ -28,6 +28,7 @@ extern "C" {
 
 #[cfg(target_os = "macos")]
 extern "C" {
+    fn has_audio_input_entitlement() -> i32;
     fn microphone_authorization_status() -> i32;
     fn request_microphone_access_sync() -> i32;
 }
@@ -40,6 +41,11 @@ fn is_accessibility_trusted() -> bool {
 #[cfg(target_os = "macos")]
 pub fn is_microphone_authorized() -> bool {
     unsafe { microphone_authorization_status() == 3 }
+}
+
+#[cfg(target_os = "macos")]
+pub fn audio_input_entitlement_enabled() -> bool {
+    unsafe { has_audio_input_entitlement() == 1 }
 }
 
 #[cfg(target_os = "macos")]
@@ -760,9 +766,10 @@ pub fn run() {
                     .unwrap_or_else(|error| format!("ukendt ({})", error));
                 let mic_status = microphone_permission_status();
                 app_log!(
-                    "[startup] bundle_id={} executable={} microphone_status={} ({})",
+                    "[startup] bundle_id={} executable={} audio_input_entitlement={} microphone_status={} ({})",
                     bundle_id,
                     executable_path,
+                    audio_input_entitlement_enabled(),
                     mic_status,
                     microphone_permission_status_label(mic_status)
                 );
