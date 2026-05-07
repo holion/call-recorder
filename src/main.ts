@@ -697,7 +697,25 @@ const microphoneSettingsBtn = document.getElementById("microphone-settings-btn")
 let microphonePollInterval: number | null = null;
 let microphonePermissionFlowActive = false;
 
-function showMicrophonePermissionOverlay(forRestart = false) {
+async function maybeOpenMicrophoneSettings() {
+  const micStatus: number = await invoke("get_microphone_permission_status");
+
+  if (micStatus === 0) {
+    await invoke("show_main_window");
+    const granted: boolean = await invoke("request_microphone_permission");
+    if (granted) return false;
+  }
+
+  const updatedStatus: number = await invoke("get_microphone_permission_status");
+  if (updatedStatus === 1 || updatedStatus === 2) {
+    await invoke("open_microphone_settings");
+    return true;
+  }
+
+  return false;
+}
+
+async function showMicrophonePermissionOverlay(forRestart = false) {
   if (microphonePermissionFlowActive) return;
 
   microphonePermissionFlowActive = true;
@@ -705,8 +723,8 @@ function showMicrophonePermissionOverlay(forRestart = false) {
   microphoneRestartBtn.classList.add("hidden");
   microphoneSettingsBtn.classList.remove("hidden");
   microphoneOverlay.classList.remove("hidden");
-  invoke("show_main_window");
-  invoke("open_microphone_settings");
+  await invoke("show_main_window");
+  await maybeOpenMicrophoneSettings();
   startMicrophonePolling(forRestart);
 }
 
@@ -737,7 +755,7 @@ function startMicrophonePolling(forRestart = false) {
 
 function setupMicrophoneListeners() {
   listen("microphone-permission-missing", () => {
-    showMicrophonePermissionOverlay(false);
+    void showMicrophonePermissionOverlay(false);
   });
 
   microphoneSettingsBtn.addEventListener("click", () => {
