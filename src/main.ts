@@ -651,11 +651,8 @@ async function ensureMicrophonePermission(forRestart = false): Promise<boolean> 
     (micStatus === 0 && (await invoke("request_microphone_permission")));
 
   if (!micGranted) {
-    await invoke("show_main_window");
     permissionsOverlay.classList.add("hidden");
-    microphoneOverlay.classList.remove("hidden");
-    invoke("open_microphone_settings");
-    startMicrophonePolling(forRestart);
+    showMicrophonePermissionOverlay(forRestart);
     return false;
   }
 
@@ -698,21 +695,41 @@ const microphoneRestartBtn = document.getElementById("microphone-restart-btn") a
 const microphoneSettingsBtn = document.getElementById("microphone-settings-btn") as HTMLButtonElement;
 
 let microphonePollInterval: number | null = null;
+let microphonePermissionFlowActive = false;
+
+function showMicrophonePermissionOverlay(forRestart = false) {
+  if (microphonePermissionFlowActive) return;
+
+  microphonePermissionFlowActive = true;
+  microphoneGrantedMsg.classList.add("hidden");
+  microphoneRestartBtn.classList.add("hidden");
+  microphoneSettingsBtn.classList.remove("hidden");
+  microphoneOverlay.classList.remove("hidden");
+  invoke("show_main_window");
+  invoke("open_microphone_settings");
+  startMicrophonePolling(forRestart);
+}
 
 // forRestart=true: after accessibility flow, need restart when mic is granted.
 // forRestart=false: mid-dictation denial, mic takes effect immediately.
 function startMicrophonePolling(forRestart = false) {
+  if (microphonePollInterval) return;
+
   microphonePollInterval = window.setInterval(async () => {
     const granted: boolean = await invoke("check_microphone_permission");
     if (granted) {
       clearInterval(microphonePollInterval!);
+      microphonePollInterval = null;
       microphoneGrantedMsg.classList.remove("hidden");
       microphoneSettingsBtn.classList.add("hidden");
       if (forRestart) {
         microphoneRestartBtn.classList.remove("hidden");
       } else {
         // Permission takes effect immediately — just close the overlay.
-        setTimeout(() => microphoneOverlay.classList.add("hidden"), 1500);
+        setTimeout(() => {
+          microphoneOverlay.classList.add("hidden");
+          microphonePermissionFlowActive = false;
+        }, 1500);
       }
     }
   }, 2000);
@@ -720,10 +737,7 @@ function startMicrophonePolling(forRestart = false) {
 
 function setupMicrophoneListeners() {
   listen("microphone-permission-missing", () => {
-    microphoneOverlay.classList.remove("hidden");
-    invoke("show_main_window");
-    invoke("open_microphone_settings");
-    startMicrophonePolling(false);
+    showMicrophonePermissionOverlay(false);
   });
 
   microphoneSettingsBtn.addEventListener("click", () => {
