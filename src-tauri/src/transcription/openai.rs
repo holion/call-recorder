@@ -1,5 +1,7 @@
 use crate::app_log;
-use crate::transcription::whisper::{contains_speech, load_wav_mono_f32, TimedSegment};
+use crate::transcription::whisper::{
+    contains_speech, contains_speech_for_dictation, load_wav_mono_f32, TimedSegment,
+};
 use anyhow::{anyhow, Context, Result};
 use hound::{WavSpec, WavWriter};
 use reqwest::blocking::multipart::{Form, Part};
@@ -44,10 +46,15 @@ pub fn transcribe_audio(api_key: &str, audio: &[f32], speaker: &str) -> Result<V
         return Ok(Vec::new());
     }
 
-    let skip_silence_gate = speaker == "Diktation";
     let mut all = Vec::new();
     for (chunk_index, chunk) in audio.chunks(CHUNK_SAMPLES).enumerate() {
-        if !skip_silence_gate && !contains_speech(chunk, speaker) {
+        let has_speech = if speaker == "Diktation" {
+            contains_speech_for_dictation(chunk, speaker)
+        } else {
+            contains_speech(chunk, speaker)
+        };
+
+        if !has_speech {
             continue;
         }
 

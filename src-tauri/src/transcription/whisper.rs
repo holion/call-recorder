@@ -163,7 +163,12 @@ pub fn format_transcript(segments: &[TimedSegment]) -> String {
 /// Check if audio contains actual speech by measuring RMS energy in 2-second windows.
 /// If ANY window has sufficient energy, we consider the file to contain speech.
 /// This avoids rejecting files where speech is surrounded by long periods of silence.
-pub(crate) fn contains_speech(samples: &[f32], speaker: &str) -> bool {
+fn contains_speech_with_thresholds(
+    samples: &[f32],
+    speaker: &str,
+    rms_threshold: f64,
+    peak_threshold: f32,
+) -> bool {
     if samples.is_empty() {
         return false;
     }
@@ -187,7 +192,7 @@ pub(crate) fn contains_speech(samples: &[f32], speaker: &str) -> bool {
             max_peak = peak;
         }
 
-        if rms > 0.005 && peak > 0.02 {
+        if rms > rms_threshold && peak > peak_threshold {
             speech_windows += 1;
         }
     }
@@ -209,6 +214,14 @@ pub(crate) fn contains_speech(samples: &[f32], speaker: &str) -> bool {
     }
 
     has_speech
+}
+
+pub(crate) fn contains_speech(samples: &[f32], speaker: &str) -> bool {
+    contains_speech_with_thresholds(samples, speaker, 0.005, 0.02)
+}
+
+pub(crate) fn contains_speech_for_dictation(samples: &[f32], speaker: &str) -> bool {
+    contains_speech_with_thresholds(samples, speaker, 0.0025, 0.01)
 }
 
 pub(crate) fn load_wav_mono_f32(path: &Path) -> Result<Vec<f32>> {

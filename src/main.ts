@@ -181,6 +181,11 @@ async function toggleRecording() {
 
 async function startRecording() {
   try {
+    const micGranted = await ensureMicrophonePermission(false);
+    if (!micGranted) {
+      return;
+    }
+
     recordBtn.disabled = true;
     recordBtn.textContent = "Starter...";
     const id: string = await invoke("start_recording");
@@ -639,20 +644,22 @@ async function onBothPermissionsGranted() {
   permissionsSettingsBtn.classList.add("hidden");
 }
 
-async function checkMicrophoneThenRestart() {
+async function ensureMicrophonePermission(forRestart = false): Promise<boolean> {
   const micStatus: number = await invoke("get_microphone_permission_status");
   const micGranted =
     micStatus === 3 ||
     (micStatus === 0 && (await invoke("request_microphone_permission")));
-  if (micGranted) {
-    onBothPermissionsGranted();
-  } else {
-    // Mic denied — transition to microphone overlay
+
+  if (!micGranted) {
+    await invoke("show_main_window");
     permissionsOverlay.classList.add("hidden");
     microphoneOverlay.classList.remove("hidden");
     invoke("open_microphone_settings");
-    startMicrophonePolling(true);
+    startMicrophonePolling(forRestart);
+    return false;
   }
+
+  return true;
 }
 
 function startPermissionPolling() {
@@ -661,8 +668,7 @@ function startPermissionPolling() {
     if (granted) {
       clearInterval(permissionPollInterval!);
       permissionsSettingsBtn.classList.add("hidden");
-      // Check microphone before showing restart
-      await checkMicrophoneThenRestart();
+      onBothPermissionsGranted();
     }
   }, 2000);
 }
@@ -745,18 +751,6 @@ async function ensurePostLoginPermissions() {
     permissionsOverlay.classList.remove("hidden");
     invoke("open_accessibility_settings");
     startPermissionPolling();
-    return true;
-  }
-
-  const micStatus: number = await invoke("get_microphone_permission_status");
-  const micGranted =
-    micStatus === 3 ||
-    (micStatus === 0 && (await invoke("request_microphone_permission")));
-  if (!micGranted) {
-    await invoke("show_main_window");
-    microphoneOverlay.classList.remove("hidden");
-    invoke("open_microphone_settings");
-    startMicrophonePolling(true);
     return true;
   }
 

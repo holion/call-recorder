@@ -48,6 +48,11 @@ pub fn microphone_permission_status() -> i32 {
 }
 
 #[cfg(target_os = "macos")]
+pub fn request_microphone_permission_blocking() -> bool {
+    unsafe { request_microphone_access_sync() == 1 }
+}
+
+#[cfg(target_os = "macos")]
 pub fn is_microphone_denied() -> bool {
     unsafe { microphone_authorization_status() == 2 }
 }
@@ -600,7 +605,7 @@ fn get_microphone_permission_status() -> i32 {
 async fn request_microphone_permission() -> bool {
     #[cfg(target_os = "macos")]
     {
-        tokio::task::spawn_blocking(|| unsafe { request_microphone_access_sync() == 1 })
+        tokio::task::spawn_blocking(request_microphone_permission_blocking)
             .await
             .unwrap_or(false)
     }

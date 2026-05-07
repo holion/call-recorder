@@ -194,6 +194,29 @@ pub fn start(app: tauri::AppHandle, data_dir: PathBuf) {
                     app_log!("[dictation] Fn ned — starter mikrofon");
                     let _ = app.emit("dictation-recording", true);
                     crate::tray::set_icon(&app, crate::tray::TrayState::Recording);
+
+                    let mic_status = crate::microphone_permission_status();
+                    let mic_granted = match mic_status {
+                        3 => true,
+                        0 => crate::request_microphone_permission_blocking(),
+                        _ => false,
+                    };
+
+                    if !mic_granted {
+                        app_log!(
+                            "[dictation] Mikrofon ikke tilgængelig (status={}) — viser overlay",
+                            mic_status
+                        );
+                        if let Some(window) = app.get_webview_window("main") {
+                            let _ = window.show();
+                            let _ = window.set_focus();
+                        }
+                        let _ = app.emit("microphone-permission-missing", ());
+                        crate::tray::set_icon(&app, crate::tray::TrayState::Normal);
+                        let _ = app.emit("dictation-recording", false);
+                        continue;
+                    }
+
                     match MicCapture::new() {
                         Ok(m) => match m.start() {
                             Ok(()) => mic = Some(m),
