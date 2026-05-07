@@ -21,7 +21,7 @@ impl WindowsSystemAudioCapture {
             .context("Ingen lydoutput-enhed fundet")?;
 
         let config = device.default_output_config()?;
-        let sample_rate = config.sample_rate().0;
+        let sample_rate = config.sample_rate();
 
         let samples: Arc<Mutex<Vec<f32>>> = Arc::new(Mutex::new(Vec::new()));
         let samples_clone = samples.clone();

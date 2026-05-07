@@ -95,9 +95,9 @@ fn extract_anna_command(text: &str) -> Option<String> {
 
 unsafe extern "system" fn keyboard_proc(
     n_code: i32,
-    w_param: WPARAM,
-    l_param: LPARAM,
-) -> LRESULT {
+    w_param: Wparam,
+    l_param: Lparam,
+) -> Lresult {
     if n_code >= 0 {
         let message = w_param as u32;
         let is_down = message == WM_KEYDOWN || message == WM_SYSKEYDOWN;
