@@ -72,6 +72,10 @@ impl SystemAudioCaptureTrait for WindowsSystemAudioCapture {
     fn sample_rate(&self) -> u32 {
         self.sample_rate
     }
+
+    fn samples_arc(&self) -> Arc<Mutex<Vec<f32>>> {
+        self.samples.clone()
+    }
 }
 
 unsafe impl Send for WindowsSystemAudioCapture {}

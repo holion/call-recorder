@@ -1,8 +1,9 @@
-#[cfg(target_os = "macos")]
 mod anna;
 mod audio;
 #[cfg(target_os = "macos")]
 mod dictation;
+#[cfg(target_os = "windows")]
+mod dictation_windows;
 mod google_auth;
 mod logging;
 mod settings;
@@ -93,9 +94,30 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
     // All audio init must run on a real OS thread (not tokio async) because
     // cpal and ScreenCaptureKit need an active run loop / thread context.
     let result = tokio::task::spawn_blocking(move || -> Result<state::ActiveRecording, String> {
-        let mic = audio::capture::MicCapture::new().map_err(|e| format!("Mikrofon-fejl: {}", e))?;
+        let mic = match audio::capture::MicCapture::new() {
+            Ok(mic) => mic,
+            Err(e) => {
+                #[cfg(target_os = "windows")]
+                {
+                    app_log!("[call-recorder] Windows mikrofon-init fejlede: {}", e);
+                    if let Some(window) = app_clone.get_webview_window("main") {
+                        let _ = window.show();
+                        let _ = window.set_focus();
+                    }
+                    let _ = app_clone.emit("microphone-permission-missing", ());
+                    open_microphone_settings_impl();
+                }
+                return Err(format!("Mikrofon-fejl: {}", e));
+            }
+        };
 
-        // System audio capture is optional — may fail if Screen Recording permission is not granted
+        #[cfg(target_os = "windows")]
+        let system = {
+            app_log!("[call-recorder] Windows-optagelse bruger kun mikrofon i første version");
+            audio::platform::create_dummy_capture()
+        };
+
+        #[cfg(not(target_os = "windows"))]
         let system = match audio::platform::create_system_capture() {
             Ok(s) => s,
             Err(e) => {
@@ -108,7 +130,19 @@ async fn start_recording(app: AppHandle, state: State<'_, AppState>) -> Result<S
             }
         };
 
-        mic.start().map_err(|e| format!("Kunne ikke starte mikrofon: {}", e))?;
+        if let Err(e) = mic.start() {
+            #[cfg(target_os = "windows")]
+            {
+                app_log!("[call-recorder] Windows mikrofon-start fejlede: {}", e);
+                if let Some(window) = app_clone.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.set_focus();
+                }
+                let _ = app_clone.emit("microphone-permission-missing", ());
+                open_microphone_settings_impl();
+            }
+            return Err(format!("Kunne ikke starte mikrofon: {}", e));
+        }
 
         // start_capture() can hang forever if ScreenCaptureKit connection fails.
         // Run it on a separate thread with a timeout.
@@ -597,6 +631,7 @@ fn check_accessibility_permission() -> bool {
 
 #[tauri::command]
 fn open_accessibility_settings() {
+    #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility")
         .spawn();
@@ -646,8 +681,18 @@ async fn request_microphone_permission() -> bool {
 
 #[tauri::command]
 fn open_microphone_settings() {
+    open_microphone_settings_impl();
+}
+
+fn open_microphone_settings_impl() {
+    #[cfg(target_os = "macos")]
     let _ = std::process::Command::new("open")
         .arg("x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone")
+        .spawn();
+
+    #[cfg(target_os = "windows")]
+    let _ = std::process::Command::new("cmd")
+        .args(["/C", "start", "", "ms-settings:privacy-microphone"])
         .spawn();
 }
 
@@ -781,6 +826,16 @@ pub fn run() {
 
                 dictation::start(app.handle().clone(), data_dir2);
 
+            }
+
+            #[cfg(target_os = "windows")]
+            {
+                let data_dir2 = app
+                    .path()
+                    .app_data_dir()
+                    .expect("Kunne ikke finde app data mappe");
+
+                dictation_windows::start(app.handle().clone(), data_dir2);
             }
 
             let handle = app.handle().clone();

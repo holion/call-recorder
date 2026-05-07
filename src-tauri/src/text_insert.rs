@@ -100,12 +100,104 @@ mod macos {
 #[cfg(target_os = "macos")]
 pub use macos::{activate_app_by_bundle_id, insert_text};
 
-#[cfg(not(target_os = "macos"))]
-pub fn insert_text(_text: &str) -> Result<(), String> {
-    Err("Tekstindsættelse er kun understøttet på macOS".into())
+#[cfg(target_os = "windows")]
+mod windows {
+    const INPUT_KEYBOARD: u32 = 1;
+    const KEYEVENTF_KEYUP: u32 = 0x0002;
+    const KEYEVENTF_UNICODE: u32 = 0x0004;
+
+    #[repr(C)]
+    struct Input {
+        r#type: u32,
+        u: InputUnion,
+    }
+
+    #[repr(C)]
+    union InputUnion {
+        ki: KeybdInput,
+    }
+
+    #[repr(C)]
+    #[derive(Clone, Copy)]
+    struct KeybdInput {
+        w_vk: u16,
+        w_scan: u16,
+        dw_flags: u32,
+        time: u32,
+        dw_extra_info: usize,
+    }
+
+    #[link(name = "user32")]
+    extern "system" {
+        fn SendInput(c_inputs: u32, p_inputs: *const Input, cb_size: i32) -> u32;
+    }
+
+    pub fn insert_text(text: &str) -> Result<(), String> {
+        if text.is_empty() {
+            return Ok(());
+        }
+
+        let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
+        for unit in text.encode_utf16() {
+            inputs.push(Input {
+                r#type: INPUT_KEYBOARD,
+                u: InputUnion {
+                    ki: KeybdInput {
+                        w_vk: 0,
+                        w_scan: unit,
+                        dw_flags: KEYEVENTF_UNICODE,
+                        time: 0,
+                        dw_extra_info: 0,
+                    },
+                },
+            });
+            inputs.push(Input {
+                r#type: INPUT_KEYBOARD,
+                u: InputUnion {
+                    ki: KeybdInput {
+                        w_vk: 0,
+                        w_scan: unit,
+                        dw_flags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
+                        time: 0,
+                        dw_extra_info: 0,
+                    },
+                },
+            });
+        }
+
+        let sent = unsafe {
+            SendInput(
+                inputs.len() as u32,
+                inputs.as_ptr(),
+                std::mem::size_of::<Input>() as i32,
+            )
+        };
+
+        if sent == inputs.len() as u32 {
+            Ok(())
+        } else {
+            Err(format!(
+                "Windows SendInput sendte kun {}/{} input-events",
+                sent,
+                inputs.len()
+            ))
+        }
+    }
+
+    pub fn activate_app_by_bundle_id(_bundle_id: &str) -> Result<(), String> {
+        Ok(())
+    }
 }
 
-#[cfg(not(target_os = "macos"))]
+#[cfg(target_os = "windows")]
+pub use windows::{activate_app_by_bundle_id, insert_text};
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+pub fn insert_text(_text: &str) -> Result<(), String> {
+    Err("Tekstindsættelse er kun understøttet på macOS og Windows".into())
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
 pub fn activate_app_by_bundle_id(_bundle_id: &str) -> Result<(), String> {
     Ok(())
 }

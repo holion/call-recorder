@@ -5,6 +5,9 @@ on:
     tags:
       - 'v*.*.*'
 
+permissions:
+  contents: write
+
 jobs:
   release:
     runs-on: macos-latest
@@ -153,3 +156,94 @@ jobs:
           echo "- Pre-build setup (checkout, validation, toolchain, cache, npm, cert): $(( tauri_start - release_start ))s" >> "$GITHUB_STEP_SUMMARY"
           echo "- Tauri build and release: $(( now - tauri_start ))s" >> "$GITHUB_STEP_SUMMARY"
           echo "- Total workflow runtime so far: $(( now - release_start ))s" >> "$GITHUB_STEP_SUMMARY"
+
+  release-windows:
+    runs-on: windows-latest
+    environment: Production
+    needs: release
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'npm'
+
+      - name: Validate tag matches app version
+        shell: pwsh
+        run: |
+          $tagVersion = $env:GITHUB_REF_NAME.TrimStart('v')
+          $packageVersion = node -p "require('./package.json').version"
+          $tauriVersion = node -p "JSON.parse(require('fs').readFileSync('./src-tauri/tauri.conf.json', 'utf8')).version"
+          if ($tagVersion -ne $packageVersion) {
+            throw "Tag version $tagVersion does not match package.json version $packageVersion"
+          }
+          if ($tagVersion -ne $tauriVersion) {
+            throw "Tag version $tagVersion does not match tauri.conf.json version $tauriVersion"
+          }
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust build artifacts
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Install frontend deps
+        run: npm ci
+
+      - name: Validate release environment
+        shell: pwsh
+        env:
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+        run: |
+          $missing = @()
+          @(
+            'VITE_FIREBASE_API_KEY',
+            'VITE_FIREBASE_AUTH_DOMAIN',
+            'VITE_FIREBASE_PROJECT_ID',
+            'VITE_FIREBASE_STORAGE_BUCKET',
+            'VITE_FIREBASE_MESSAGING_SENDER_ID',
+            'VITE_FIREBASE_APP_ID',
+            'GOOGLE_CLIENT_ID',
+            'GOOGLE_CLIENT_SECRET'
+          ) | ForEach-Object {
+            if ([string]::IsNullOrWhiteSpace([Environment]::GetEnvironmentVariable($_))) {
+              $missing += $_
+            }
+          }
+          if ($missing.Count -gt 0) {
+            throw "Missing release environment: $($missing -join ', ')"
+          }
+
+      - name: Build and release Windows
+        uses: tauri-apps/tauri-action@v0
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
+          VITE_FIREBASE_API_KEY: ${{ secrets.VITE_FIREBASE_API_KEY }}
+          VITE_FIREBASE_AUTH_DOMAIN: ${{ secrets.VITE_FIREBASE_AUTH_DOMAIN }}
+          VITE_FIREBASE_PROJECT_ID: ${{ secrets.VITE_FIREBASE_PROJECT_ID }}
+          VITE_FIREBASE_STORAGE_BUCKET: ${{ secrets.VITE_FIREBASE_STORAGE_BUCKET }}
+          VITE_FIREBASE_MESSAGING_SENDER_ID: ${{ secrets.VITE_FIREBASE_MESSAGING_SENDER_ID }}
+          VITE_FIREBASE_APP_ID: ${{ secrets.VITE_FIREBASE_APP_ID }}
+          GOOGLE_CLIENT_ID: ${{ secrets.GOOGLE_CLIENT_ID }}
+          GOOGLE_CLIENT_SECRET: ${{ secrets.GOOGLE_CLIENT_SECRET }}
+          HUMIO_INGEST_URL: ${{ secrets.HUMIO_INGEST_URL }}
+          HUMIO_INGEST_TOKEN: ${{ secrets.HUMIO_INGEST_TOKEN }}
+          HUMIO_ENV: prod
+        with:
+          tagName: ${{ github.ref_name }}
+          releaseName: 'Anna ${{ github.ref_name }}'
+          releaseBody: 'Se commits for detaljer.'
+          releaseDraft: false
+          prerelease: false

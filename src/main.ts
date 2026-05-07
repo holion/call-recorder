@@ -693,9 +693,20 @@ const microphoneOverlay = document.getElementById("microphone-overlay")!;
 const microphoneGrantedMsg = document.getElementById("microphone-granted-msg")!;
 const microphoneRestartBtn = document.getElementById("microphone-restart-btn") as HTMLButtonElement;
 const microphoneSettingsBtn = document.getElementById("microphone-settings-btn") as HTMLButtonElement;
+const microphoneSettingsHint = microphoneOverlay.querySelector(".settings-hint") as HTMLElement | null;
 
 let microphonePollInterval: number | null = null;
 let microphonePermissionFlowActive = false;
+
+function applyPlatformPermissionCopy() {
+  if (!navigator.userAgent.includes("Windows")) return;
+
+  if (microphoneSettingsHint) {
+    microphoneSettingsHint.innerHTML =
+      "Windows-indstillinger er åbnet. Tillad Anna under <em>Privacy &amp; security → Microphone</em>.";
+  }
+  microphoneSettingsBtn.textContent = "Åbn Windows-indstillinger igen";
+}
 
 async function maybeOpenMicrophoneSettings() {
   const micStatus: number = await invoke("get_microphone_permission_status");
@@ -857,6 +868,7 @@ async function handleLoginClick() {
 
 window.addEventListener("DOMContentLoaded", async () => {
   loginBtn.addEventListener("click", handleLoginClick);
+  applyPlatformPermissionCopy();
 
   try {
     setupListeners();

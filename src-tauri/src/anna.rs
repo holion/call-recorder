@@ -1,7 +1,10 @@
 // Anna AI assistant: screenshot + OpenAI API call
 
-use std::ffi::{c_void, CString};
 use std::path::Path;
+
+#[cfg(target_os = "macos")]
+use std::ffi::{c_void, CString};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 use base64::{engine::general_purpose::STANDARD as B64, Engine};
@@ -61,29 +64,40 @@ struct AnnaPayload {
 // The screenshot is encoded as JPEG to keep payload size down; Chat Completions
 // can drop image inputs that are too large.
 
+#[cfg(target_os = "macos")]
 type CGDirectDisplayID = u32;
+#[cfg(target_os = "macos")]
 type CGImageRef = *mut c_void;
+#[cfg(target_os = "macos")]
 type CFMutableDataRef = *mut c_void;
+#[cfg(target_os = "macos")]
 type CFStringRef = *const c_void;
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct CGRect {
     origin: CGPoint,
     size: CGSize,
 }
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct CGPoint {
     x: f64,
     y: f64,
 }
+#[cfg(target_os = "macos")]
 #[repr(C)]
 struct CGSize {
     width: f64,
     height: f64,
 }
+#[cfg(target_os = "macos")]
 type CGWindowID = u32;
+#[cfg(target_os = "macos")]
 type CGWindowListOption = u32;
+#[cfg(target_os = "macos")]
 type CGWindowImageOption = u32;
 
+#[cfg(target_os = "macos")]
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     fn CGMainDisplayID() -> CGDirectDisplayID;
@@ -97,6 +111,7 @@ extern "C" {
     ) -> CGImageRef;
 }
 
+#[cfg(target_os = "macos")]
 #[link(name = "ImageIO", kind = "framework")]
 extern "C" {
     fn CGImageDestinationCreateWithData(
@@ -109,6 +124,7 @@ extern "C" {
     fn CGImageDestinationFinalize(dest: *mut c_void) -> bool;
 }
 
+#[cfg(target_os = "macos")]
 #[link(name = "CoreFoundation", kind = "framework")]
 extern "C" {
     fn CFDataCreateMutable(allocator: *const c_void, capacity: isize) -> CFMutableDataRef;
@@ -122,11 +138,16 @@ extern "C" {
     ) -> CFStringRef;
 }
 
+#[cfg(target_os = "macos")]
 const KCF_STRING_ENCODING_UTF8: u32 = 0x0800_0100;
+#[cfg(target_os = "macos")]
 const K_CG_WINDOW_LIST_OPTION_ON_SCREEN_ONLY: CGWindowListOption = 1 << 0;
+#[cfg(target_os = "macos")]
 const K_CG_WINDOW_IMAGE_DEFAULT: CGWindowImageOption = 0;
+#[cfg(target_os = "macos")]
 const K_CG_WINDOW_IMAGE_BOUNDS_IGNORE_FRAMING: CGWindowImageOption = 1 << 0;
 
+#[cfg(target_os = "macos")]
 fn frontmost_window_id() -> Option<CGWindowID> {
     let out = Command::new("osascript")
         .arg("-e")
@@ -140,6 +161,7 @@ fn frontmost_window_id() -> Option<CGWindowID> {
     txt.parse::<u32>().ok()
 }
 
+#[cfg(target_os = "macos")]
 fn encode_cg_image_as_jpeg(image: CGImageRef) -> Result<Vec<u8>, String> {
     unsafe {
         let data = CFDataCreateMutable(std::ptr::null(), 0);
@@ -179,6 +201,7 @@ fn encode_cg_image_as_jpeg(image: CGImageRef) -> Result<Vec<u8>, String> {
     }
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
     unsafe {
         let display = CGMainDisplayID();
@@ -195,6 +218,11 @@ pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn take_screenshot() -> Result<Vec<u8>, String> {
+    Err("Screenshot er endnu ikke understøttet på Windows".into())
+}
+
 fn wants_full_screen(prompt: &str) -> bool {
     let l = prompt.to_lowercase();
     [
@@ -208,6 +236,7 @@ fn wants_full_screen(prompt: &str) -> bool {
     .any(|k| l.contains(k))
 }
 
+#[cfg(target_os = "macos")]
 pub(crate) fn take_screenshot_for_prompt(prompt: &str) -> Result<Vec<u8>, String> {
     if wants_full_screen(prompt) {
         app_log!("[anna] Screenshot-mode: hele skærmen");
@@ -241,6 +270,11 @@ pub(crate) fn take_screenshot_for_prompt(prompt: &str) -> Result<Vec<u8>, String
     take_screenshot()
 }
 
+#[cfg(not(target_os = "macos"))]
+pub(crate) fn take_screenshot_for_prompt(_prompt: &str) -> Result<Vec<u8>, String> {
+    take_screenshot()
+}
+
 pub(crate) fn needs_screenshot(prompt: &str) -> bool {
     let l = prompt.to_lowercase();
     ["skærm", "skærmen", "skærmbillede", "screenshot", "se på"]
@@ -267,6 +301,7 @@ fn wants_insert_text(prompt: &str) -> bool {
     .any(|k| l.contains(k))
 }
 
+#[cfg(target_os = "macos")]
 fn frontmost_app_info() -> (Option<String>, Option<String>) {
     let output = Command::new("osascript")
         .arg("-e")
@@ -298,6 +333,12 @@ fn frontmost_app_info() -> (Option<String>, Option<String>) {
     (Some(bundle), name)
 }
 
+#[cfg(not(target_os = "macos"))]
+fn frontmost_app_info() -> (Option<String>, Option<String>) {
+    (Some("windows.foreground".to_string()), None)
+}
+
+#[cfg(target_os = "macos")]
 fn is_chromium_browser(bundle_id: &str) -> bool {
     matches!(
         bundle_id,
@@ -311,6 +352,7 @@ fn is_chromium_browser(bundle_id: &str) -> bool {
     )
 }
 
+#[cfg(target_os = "macos")]
 fn frontmost_browser_tab_title(app_name: &str, bundle_id: &str) -> Option<String> {
     let script = if bundle_id == "com.apple.Safari" {
         "tell application \"Safari\" to get name of current tab of front window".to_string()
@@ -339,6 +381,11 @@ fn frontmost_browser_tab_title(app_name: &str, bundle_id: &str) -> Option<String
     } else {
         Some(title)
     }
+}
+
+#[cfg(not(target_os = "macos"))]
+fn frontmost_browser_tab_title(_app_name: &str, _bundle_id: &str) -> Option<String> {
+    None
 }
 
 // ── OpenAI call ────────────────────────────────────────────────────────

@@ -2,17 +2,19 @@
 
 Opkaldsoptager til salgsteam. Optager mikrofon og systemlyd, transskriberer automatisk med en lokal Whisper-model, og gemmer alt i Firestore.
 
-Kører som en macOS menubar-app bygget med Tauri 2 + TypeScript.
+Kører som en macOS menubar-app og Windows tray-app bygget med Tauri 2 + TypeScript.
 
 ## Features
 
-- Optag mikrofon + systemlyd (via ScreenCaptureKit på macOS)
+- Optag mikrofon + systemlyd på macOS (via ScreenCaptureKit)
+- Optag mikrofon på Windows 10/11
 - Live transskription under optagelse med speaker labels (Sælger / Lead)
 - Lokal Whisper-model — ingen lyd sendes til tredjepart
 - Google login via system browser
 - Optagelser synkroniseret til Firestore i real-time
 - Fjernbetjening: start/stop optagelse fra Firestore (f.eks. fra en webapp)
-- Menubar tray-ikon med hurtig adgang
+- Menubar/tray-ikon med hurtig adgang
+- Diktering via Fn på macOS og Ctrl+Space på Windows
 
 ## Forudsætninger
 
@@ -21,6 +23,7 @@ Kører som en macOS menubar-app bygget med Tauri 2 + TypeScript.
 - [Tauri CLI](https://v2.tauri.app/start/prerequisites/) (`npm install -g @tauri-apps/cli`)
 - [Firebase CLI](https://firebase.google.com/docs/cli) (valgfrit, til emulators)
 - macOS 13+ (systemlyd kræver ScreenCaptureKit)
+- Windows 10/11 (Windows-versionen optager kun mikrofon i første omgang)
 
 ## Setup
 
@@ -75,7 +78,7 @@ rm -rf ~/Library/Application\ Support/dk.holion.call-recorder/WebKit
 npm run tauri build
 ```
 
-Producerer en `.dmg` / `.app` i `src-tauri/target/release/bundle/`.
+Producerer en platformsspecifik installer i `src-tauri/target/release/bundle/`.
 
 ## Release
 
