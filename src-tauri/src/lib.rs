@@ -777,6 +777,7 @@ pub fn run() {
             }
 
             let handle = app.handle().clone();
+            let app_version_for_updater = app_version.clone();
             tauri::async_runtime::spawn(async move {
                 if let Ok(updater) = handle.updater() {
                     match updater.check().await {
@@ -789,7 +790,10 @@ pub fn run() {
                                 let _ = handle.emit("update-installed", ());
                             }
                         }
-                        Ok(None) => app_log!("[updater] Appen er opdateret"),
+                        Ok(None) => app_log!(
+                            "[updater] Appen er opdateret (version: {})",
+                            app_version_for_updater
+                        ),
                         Err(e) => app_log!("[updater] Opdateringstjek fejlede: {}", e),
                     }
                 }
