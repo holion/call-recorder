@@ -725,6 +725,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_updater::Builder::new().build())
         .setup(|app| {
+            let app_version = app.package_info().version.to_string();
             let data_dir = app
                 .path()
                 .app_data_dir()
@@ -740,7 +741,8 @@ pub fn run() {
             app.manage(state);
             logging::init_remote_logging(startup_settings.installation_id.clone());
             app_log!(
-                "[startup] installation_id={}",
+                "[startup] version={} installation_id={}",
+                app_version,
                 startup_settings.installation_id
             );
 
