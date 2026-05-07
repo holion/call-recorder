@@ -1,7 +1,7 @@
 {
   "name": "call-recorder",
   "private": true,
-  "version": "0.1.15",
+  "version": "0.1.16",
   "type": "module",
   "scripts": {
     "kill-port": "lsof -ti:1420 | xargs kill -9 2>/dev/null || true",
