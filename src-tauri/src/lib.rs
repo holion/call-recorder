@@ -48,6 +48,17 @@ pub fn microphone_permission_status() -> i32 {
 }
 
 #[cfg(target_os = "macos")]
+pub fn microphone_permission_status_label(status: i32) -> &'static str {
+    match status {
+        0 => "NotDetermined",
+        1 => "Restricted",
+        2 => "Denied",
+        3 => "Authorized",
+        _ => "Unknown",
+    }
+}
+
+#[cfg(target_os = "macos")]
 pub fn request_microphone_permission_blocking() -> bool {
     unsafe { request_microphone_access_sync() == 1 }
 }
@@ -727,6 +738,19 @@ pub fn run() {
 
             #[cfg(target_os = "macos")]
             {
+                let bundle_id = app.config().identifier.clone();
+                let executable_path = std::env::current_exe()
+                    .map(|path| path.display().to_string())
+                    .unwrap_or_else(|error| format!("ukendt ({})", error));
+                let mic_status = microphone_permission_status();
+                app_log!(
+                    "[startup] bundle_id={} executable={} microphone_status={} ({})",
+                    bundle_id,
+                    executable_path,
+                    mic_status,
+                    microphone_permission_status_label(mic_status)
+                );
+
                 let data_dir2 = app
                     .path()
                     .app_data_dir()
