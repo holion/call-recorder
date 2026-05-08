@@ -52,6 +52,8 @@ mod macos {
 
     fn set_clipboard(text: &str) -> Result<(), String> {
         let mut child = Command::new("pbcopy")
+            .env("LANG", "en_US.UTF-8")
+            .env("LC_CTYPE", "en_US.UTF-8")
             .stdin(Stdio::piped())
             .spawn()
             .map_err(|e| format!("pbcopy fejlede: {}", e))?;
@@ -102,9 +104,17 @@ pub use macos::{activate_app_by_bundle_id, insert_text};
 
 #[cfg(target_os = "windows")]
 mod windows {
+    use std::ffi::c_void;
+    use std::time::Duration;
+
     const INPUT_KEYBOARD: u32 = 1;
     const KEYEVENTF_KEYUP: u32 = 0x0002;
-    const KEYEVENTF_UNICODE: u32 = 0x0004;
+    const VK_CONTROL: u16 = 0x11;
+    const VK_V: u16 = 0x56;
+
+    const CF_UNICODETEXT: u32 = 13;
+    const GMEM_MOVEABLE: u32 = 0x0002;
+    const GMEM_ZEROINIT: u32 = 0x0040;
 
     #[repr(C)]
     struct Input {
@@ -130,6 +140,20 @@ mod windows {
     #[link(name = "user32")]
     extern "system" {
         fn SendInput(c_inputs: u32, p_inputs: *const Input, cb_size: i32) -> u32;
+        fn OpenClipboard(hwnd_new_owner: isize) -> i32;
+        fn CloseClipboard() -> i32;
+        fn EmptyClipboard() -> i32;
+        fn GetClipboardData(u_format: u32) -> *mut c_void;
+        fn SetClipboardData(u_format: u32, h_mem: *mut c_void) -> *mut c_void;
+        fn IsClipboardFormatAvailable(format: u32) -> i32;
+    }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GlobalAlloc(u_flags: u32, dw_bytes: usize) -> *mut c_void;
+        fn GlobalLock(h_mem: *mut c_void) -> *mut c_void;
+        fn GlobalUnlock(h_mem: *mut c_void) -> i32;
+        fn GlobalFree(h_mem: *mut c_void) -> *mut c_void;
     }
 
     pub fn insert_text(text: &str) -> Result<(), String> {
@@ -137,33 +161,91 @@ mod windows {
             return Ok(());
         }
 
-        let mut inputs = Vec::with_capacity(text.encode_utf16().count() * 2);
-        for unit in text.encode_utf16() {
-            inputs.push(Input {
-                r#type: INPUT_KEYBOARD,
-                u: InputUnion {
-                    ki: KeybdInput {
-                        w_vk: 0,
-                        w_scan: unit,
-                        dw_flags: KEYEVENTF_UNICODE,
-                        time: 0,
-                        dw_extra_info: 0,
-                    },
-                },
-            });
-            inputs.push(Input {
-                r#type: INPUT_KEYBOARD,
-                u: InputUnion {
-                    ki: KeybdInput {
-                        w_vk: 0,
-                        w_scan: unit,
-                        dw_flags: KEYEVENTF_UNICODE | KEYEVENTF_KEYUP,
-                        time: 0,
-                        dw_extra_info: 0,
-                    },
-                },
-            });
+        let previous = read_clipboard_text();
+        write_clipboard_text(text)?;
+        std::thread::sleep(Duration::from_millis(80));
+        let paste_result = simulate_ctrl_v();
+        std::thread::sleep(Duration::from_millis(500));
+
+        if let Some(previous) = previous {
+            let _ = write_clipboard_text(&previous);
         }
+
+        paste_result
+    }
+
+    fn read_clipboard_text() -> Option<String> {
+        unsafe {
+            if IsClipboardFormatAvailable(CF_UNICODETEXT) == 0 || OpenClipboard(0) == 0 {
+                return None;
+            }
+
+            let handle = GetClipboardData(CF_UNICODETEXT);
+            if handle.is_null() {
+                CloseClipboard();
+                return None;
+            }
+
+            let ptr = GlobalLock(handle) as *const u16;
+            if ptr.is_null() {
+                CloseClipboard();
+                return None;
+            }
+
+            let mut len = 0usize;
+            while *ptr.add(len) != 0 {
+                len += 1;
+            }
+            let text = String::from_utf16_lossy(std::slice::from_raw_parts(ptr, len));
+            GlobalUnlock(handle);
+            CloseClipboard();
+            Some(text)
+        }
+    }
+
+    fn write_clipboard_text(text: &str) -> Result<(), String> {
+        let mut utf16 = text.encode_utf16().collect::<Vec<_>>();
+        utf16.push(0);
+        let bytes = utf16.len() * std::mem::size_of::<u16>();
+
+        unsafe {
+            let handle = GlobalAlloc(GMEM_MOVEABLE | GMEM_ZEROINIT, bytes);
+            if handle.is_null() {
+                return Err("Windows clipboard allocation fejlede".into());
+            }
+
+            let locked = GlobalLock(handle) as *mut u16;
+            if locked.is_null() {
+                GlobalFree(handle);
+                return Err("Windows clipboard lock fejlede".into());
+            }
+            std::ptr::copy_nonoverlapping(utf16.as_ptr(), locked, utf16.len());
+            GlobalUnlock(handle);
+
+            if OpenClipboard(0) == 0 {
+                GlobalFree(handle);
+                return Err("Windows clipboard kunne ikke åbnes".into());
+            }
+
+            EmptyClipboard();
+            if SetClipboardData(CF_UNICODETEXT, handle).is_null() {
+                CloseClipboard();
+                GlobalFree(handle);
+                return Err("Windows clipboard kunne ikke sættes".into());
+            }
+
+            CloseClipboard();
+            Ok(())
+        }
+    }
+
+    fn simulate_ctrl_v() -> Result<(), String> {
+        let inputs = [
+            key_input(VK_CONTROL, false),
+            key_input(VK_V, false),
+            key_input(VK_V, true),
+            key_input(VK_CONTROL, true),
+        ];
 
         let sent = unsafe {
             SendInput(
@@ -176,11 +258,22 @@ mod windows {
         if sent == inputs.len() as u32 {
             Ok(())
         } else {
-            Err(format!(
-                "Windows SendInput sendte kun {}/{} input-events",
-                sent,
-                inputs.len()
-            ))
+            Err(format!("Windows Ctrl+V sendte kun {}/{} input-events", sent, inputs.len()))
+        }
+    }
+
+    fn key_input(vk: u16, key_up: bool) -> Input {
+        Input {
+            r#type: INPUT_KEYBOARD,
+            u: InputUnion {
+                ki: KeybdInput {
+                    w_vk: vk,
+                    w_scan: 0,
+                    dw_flags: if key_up { KEYEVENTF_KEYUP } else { 0 },
+                    time: 0,
+                    dw_extra_info: 0,
+                },
+            },
         }
     }
 
